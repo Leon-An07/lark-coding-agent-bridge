@@ -6,7 +6,7 @@ import {
   resolveAskAnswers,
   stripAgentCardBlocks,
 } from '../../../src/card/agent-card.js';
-import { askCard } from '../../../src/card/templates.js';
+import { askCard, lockedCard } from '../../../src/card/templates.js';
 
 interface FormCard {
   schema: string;
@@ -73,6 +73,28 @@ describe('agent-card', () => {
     });
   });
 
+  // A 2.0 buttons card: body.elements → column_set → column → button. Pull the
+  // [{value, type}] for each button.
+  const buttonsOf = (
+    card: unknown,
+  ): Array<{ value: Record<string, unknown>; type?: string }> => {
+    const c = card as {
+      body: {
+        elements: Array<{
+          tag: string;
+          columns?: Array<{
+            elements: Array<{ type?: string; behaviors?: Array<{ value: Record<string, unknown> }> }>;
+          }>;
+        }>;
+      };
+    };
+    const cs = c.body.elements.find((e) => e.tag === 'column_set');
+    return (cs?.columns ?? []).map((col) => ({
+      value: col.elements[0]!.behaviors![0]!.value,
+      type: col.elements[0]!.type,
+    }));
+  };
+
   describe('askCard', () => {
     it('builds a card whose buttons carry __bridge_cb and the agent fields', () => {
       const card = askCard({
@@ -82,26 +104,19 @@ describe('agent-card', () => {
           { text: '方案 A', value: { choice: 'a' }, style: 'primary' },
           { text: '方案 B', value: { choice: 'b' } },
         ],
-      }) as {
-        header: { title: { content: string } };
-        elements: Array<{ tag: string; actions?: Array<{ value: Record<string, unknown>; type: string }> }>;
-      };
+      }) as { header: { title: { content: string } } };
 
       expect(card.header.title.content).toBe('选择');
-      const action = card.elements.find((e) => e.tag === 'action');
-      expect(action?.actions).toHaveLength(2);
-      // toMatchObject: the value also carries the signed bridge_token (or none).
-      expect(action?.actions?.[0]?.value).toMatchObject({ __bridge_cb: true, choice: 'a' });
-      expect(action?.actions?.[0]?.type).toBe('primary');
-      expect(action?.actions?.[1]?.value).toMatchObject({ __bridge_cb: true, choice: 'b' });
+      const btns = buttonsOf(card);
+      expect(btns).toHaveLength(2);
+      expect(btns[0]!.value).toMatchObject({ __bridge_cb: true, choice: 'a' });
+      expect(btns[0]!.type).toBe('primary');
+      expect(btns[1]!.value).toMatchObject({ __bridge_cb: true, choice: 'b' });
     });
 
     it('wraps a scalar button value under {value}', () => {
-      const card = askCard({ buttons: [{ text: 'OK', value: 'yes' }] }) as {
-        elements: Array<{ tag: string; actions?: Array<{ value: Record<string, unknown> }> }>;
-      };
-      const action = card.elements.find((e) => e.tag === 'action');
-      expect(action?.actions?.[0]?.value).toMatchObject({ __bridge_cb: true, value: 'yes' });
+      const btns = buttonsOf(askCard({ buttons: [{ text: 'OK', value: 'yes' }] }));
+      expect(btns[0]!.value).toMatchObject({ __bridge_cb: true, value: 'yes' });
     });
 
     it('defaults the header when none is given', () => {
@@ -113,10 +128,7 @@ describe('agent-card', () => {
   });
 
   describe('askCard signing + restrict', () => {
-    const firstButtonValue = (card: unknown): Record<string, unknown> => {
-      const c = card as { elements: Array<{ tag: string; actions?: Array<{ value: Record<string, unknown> }> }> };
-      return c.elements.find((e) => e.tag === 'action')!.actions![0]!.value;
-    };
+    const firstButtonValue = (card: unknown): Record<string, unknown> => buttonsOf(card)[0]!.value;
     // Fake signer: records the operator it was asked to bind to, returns a token.
     const makeSign = (): { sign: (op: string) => string; ops: string[] } => {
       const ops: string[] = [];
@@ -164,10 +176,32 @@ describe('agent-card', () => {
         { buttons: [{ text: 'A', value: { choice: 'a' } }, { text: 'B', value: { choice: 'b' } }] },
         'ou_asker',
         sign,
-      ) as { elements: Array<{ tag: string; actions?: Array<{ value: Record<string, unknown> }> }> };
-      const acts = card.elements.find((e) => e.tag === 'action')!.actions!;
+      );
+      const btns = buttonsOf(card);
       expect(ops).toHaveLength(1); // one signature for the whole card
-      expect(acts[0]!.value.bridge_token).toBe(acts[1]!.value.bridge_token); // shared → single-use across both
+      expect(btns[0]!.value.bridge_token).toBe(btns[1]!.value.bridge_token); // shared → single-use
+    });
+
+  });
+
+  describe('lockedCard', () => {
+    it('is a green, button-less "✅ 已完成" card', () => {
+      const c = lockedCard() as {
+        header: { template: string; title: { content: string } };
+        body: { elements: Array<{ tag: string }> };
+      };
+      expect(c.header.template).toBe('green');
+      expect(c.header.title.content).toBe('✅ 已完成');
+      expect(c.body.elements.every((e) => !['button', 'action', 'form'].includes(e.tag))).toBe(true);
+    });
+
+    it('tucks the submitted result into a collapsible panel', () => {
+      const c = lockedCard('**db** PG') as {
+        body: { elements: Array<{ tag: string; expanded?: boolean; elements?: Array<{ content: string }> }> };
+      };
+      const panel = c.body.elements.find((e) => e.tag === 'collapsible_panel');
+      expect(panel?.expanded).toBe(false);
+      expect(panel?.elements?.[0]?.content).toBe('**db** PG');
     });
   });
 
@@ -197,10 +231,13 @@ describe('agent-card', () => {
         'ou_asker',
         sign,
       );
-      const submit = formOf(card).find((e) => e.form_action_type === 'submit');
-      expect(submit?.value?.__bridge_cb).toBe(true);
-      expect(submit?.value?.bridge_token).toBe('tok(ou_asker)'); // default restrict "me"
-      expect(submit?.value?.__ask).toEqual([{ f: 'q0', q: 'db?', k: 'select' }]);
+      const submit = formOf(card).find((e) => e.form_action_type === 'submit') as
+        | { behaviors?: Array<{ value: Record<string, unknown> }> }
+        | undefined;
+      const v = submit?.behaviors?.[0]?.value; // callback fires via behaviors (no top-level value)
+      expect(v?.__bridge_cb).toBe(true);
+      expect(v?.bridge_token).toBe('tok(ou_asker)'); // default restrict "me"
+      expect(v?.__ask).toEqual([{ f: 'q0', q: 'db?', k: 'select' }]);
     });
 
     it('select/input components carry no value (only the submit button does)', () => {

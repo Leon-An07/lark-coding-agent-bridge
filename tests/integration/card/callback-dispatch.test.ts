@@ -65,6 +65,28 @@ describe('signed card callback dispatch', () => {
     expect(queued[0]?.chatType).toBe('group');
   });
 
+  it('locks the card (in place) after the settle window on a valid click', async () => {
+    const h = await createHarness();
+
+    await h.dispatch({
+      __bridge_cb: true,
+      bridge_token: h.token('agent_callback', { nonce: 'n-lock' }),
+      choice: 'a',
+    });
+
+    // The forward (sync) carries just the agent's own fields.
+    const queued = h.pending.cancel('oc_group');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.content).toBe('[card-click] {"choice":"a"}');
+
+    // The lock is detached + delayed (CARDKIT_SETTLE_MS) so Lark's form snap-back
+    // happens first; wait it out, then the carrier card is replaced (an inline
+    // card patches by message_id).
+    await new Promise((r) => setTimeout(r, 1200));
+    const updates = h.channel.rawClient.requests.filter((r) => r.method === 'im.v1.message.patch');
+    expect(updates.length).toBeGreaterThan(0);
+  });
+
   it('drops legacy Claude callback markers before command dispatch', async () => {
     const h = await createHarness();
     const activeRun = h.agent.run({ runId: 'run-active', prompt: 'running' }) as FakeAgentRun;

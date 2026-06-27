@@ -22,7 +22,12 @@ import {
 } from '../card/config-card';
 import { GROUP_MSG_SCOPE, hasGroupMsgScope } from '../bot/app-scope';
 import { requestScopeGrantLink } from '../bot/wizard';
-import { forgetManagedCard, sendManagedCard, updateManagedCard } from '../card/managed';
+import {
+  CARDKIT_SETTLE_MS,
+  forgetManagedCard,
+  sendManagedCard,
+  updateManagedCard,
+} from '../card/managed';
 import { helpCard, resumeCard, statusCard, workspacesCard } from '../card/templates';
 import type { AppConfig, AppPreferences, MessageReplyMode, TenantBrand } from '../config/schema';
 import {
@@ -1359,9 +1364,8 @@ async function cancelAccount(ctx: CommandContext): Promise<void> {
 // Lark's client holds a local "form just submitted" state for a short
 // window after the click that overrides any cardkit.card.update we issue.
 // We always wait at least this long before flipping the form card to its
-// terminal (success/failure) state. Empirically ~1s is enough; less than
-// that and the update gets reverted to the form's pre-submit state.
-const FORM_SETTLE_MS = 1000;
+// terminal (success/failure) state. Shared with the agent-card morph/lock.
+const FORM_SETTLE_MS = CARDKIT_SETTLE_MS;
 
 async function submitAccount(ctx: CommandContext): Promise<void> {
   const fv = ctx.formValue ?? {};

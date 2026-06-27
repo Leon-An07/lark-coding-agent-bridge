@@ -6,6 +6,8 @@ import type { PendingQueue } from '../bot/pending-queue';
 import type { ProcessPool } from '../bot/process-pool';
 import type { CallbackAuth } from './callback-auth';
 import { resolveAskAnswers, type AskMapEntry } from './agent-card';
+import { lockedCard } from './templates';
+import { CARDKIT_SETTLE_MS, forgetManagedCard, isManaged, updateManagedCard } from './managed';
 import { runCommandHandler, type CommandContext, type Controls } from '../commands';
 import { log } from '../core/logger';
 import { canUseDm, canUseGroup } from '../policy/access';
@@ -23,6 +25,8 @@ import { commandSessionCatalogIdentity } from '../bot/session-catalog-identity';
  */
 const BRIDGE_CALLBACK_MARKER = '__bridge_cb';
 const LEGACY_CLAUDE_CALLBACK_MARKER = '__claude_cb';
+/** Map of form fields → questions, baked into a questions-form submit value. */
+const ASK_MAP_MARKER = '__ask';
 
 export interface CardDispatchDeps {
   channel: LarkChannel;
@@ -57,16 +61,6 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
     | { action?: { form_value?: Record<string, unknown> } }
     | undefined;
   const formValue = raw?.action?.form_value;
-
-  // Diagnostic: log every card click the moment it reaches us, so we can tell
-  // "event never arrived" (no log) apart from "arrived but dropped" (log + a
-  // skip reason). Cheap, one line per click.
-  log.info('cardAction', 'received', {
-    chatId,
-    operator: operatorId.slice(-6),
-    keys: Object.keys(payload).join(','),
-    hasForm: Boolean(formValue),
-  });
 
   // Resolve the click's session scope. For topic groups we need to know
   // the message's thread_id so the action targets the right topic's
@@ -165,11 +159,74 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
         return;
       }
     }
+    // First valid click wins: lock the card into a "done" state (green header,
+    // showing the choice, no buttons). Scheduled DETACHED + delayed (not awaited)
+    // — Lark keeps the form locked while this handler is pending and snaps the
+    // card back to its cached form on return, so an inline update flashes then
+    // reverts. Returning immediately lets the snap-back happen first; the delayed
+    // update then sticks. The nonce already blocks a real second submit.
+    scheduleAgentCardLock(deps, payload, formValue);
     forwardToAgent(deps, payload, formValue, scope, threadId, mode);
     return;
   }
 
   return;
+}
+
+/**
+ * Replace the just-clicked agent card with a locked "done" card. Managed cards
+ * (the morphed markdown reply) update by card_id via the cardkit API; plain
+ * inline cards (the fallback send / card-mode bubble) patch by message_id.
+ * Best-effort — a failure here never blocks forwarding the click.
+ */
+function scheduleAgentCardLock(
+  deps: CardDispatchDeps,
+  payload: Record<string, unknown>,
+  formValue: Record<string, unknown> | undefined,
+): void {
+  const messageId = deps.evt.messageId;
+  if (!messageId) return;
+  const managed = isManaged(messageId);
+  const card = lockedCard(clickResultSummary(payload, formValue));
+  void (async () => {
+    await new Promise((resolve) => setTimeout(resolve, CARDKIT_SETTLE_MS));
+    try {
+      if (managed) {
+        // Managed (cardkit) entity update — the reliable, /config-proven path.
+        await updateManagedCard(deps.channel, messageId, card);
+      } else {
+        // Fallback for a plain inline card (no entity registered).
+        await deps.channel.updateCard(messageId, card);
+      }
+    } catch (err) {
+      log.warn('cardAction', 'lock-failed', {
+        messageId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      if (managed) forgetManagedCard(messageId); // release even if the update failed
+    }
+  })();
+}
+
+/** A human-readable summary of what the user picked, shown inside the locked
+ * card so the result lives ON the card (not as a separate reply). */
+function clickResultSummary(
+  payload: Record<string, unknown>,
+  formValue: Record<string, unknown> | undefined,
+): string {
+  const ask = payload[ASK_MAP_MARKER];
+  if (Array.isArray(ask)) {
+    const answers = resolveAskAnswers(ask as AskMapEntry[], formValue);
+    return Object.entries(answers)
+      .map(([q, a]) => `**${q}** ${Array.isArray(a) ? a.join('、') || '（空）' : a || '（空）'}`)
+      .join('\n');
+  }
+  const { [BRIDGE_CALLBACK_MARKER]: _m, bridge_token: _t, ...rest } = payload;
+  const vals = Object.values(rest)
+    .filter((v) => typeof v === 'string' || typeof v === 'number')
+    .map(String);
+  return vals.length ? `你的选择:${vals.join('、')}` : '';
 }
 
 async function resolveScope(

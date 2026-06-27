@@ -33,8 +33,6 @@ function shell(title: string, elements: object[]): object {
   };
 }
 
-const V2_CONFIG = { wide_screen_mode: true, update_multi: true };
-
 /**
  * Signs an agent callback for a specific clicker ('*' = anyone). Provided by the
  * bridge, which holds the app secret — the agent never sees it. Returns a
@@ -66,6 +64,38 @@ function callbackValue(
 }
 
 /**
+ * The card a clicked/submitted agent card is replaced with: a green "✅ 已完成"
+ * card that tucks what the user submitted into a collapsed "查看提交内容" panel
+ * (click to expand). No buttons, so it can't be answered again.
+ */
+export function lockedCard(result?: string): object {
+  const elements: object[] = result
+    ? [
+        {
+          tag: 'collapsible_panel',
+          expanded: false,
+          header: {
+            title: { tag: 'markdown', content: '查看提交内容' },
+            vertical_align: 'center',
+            icon: { tag: 'standard_icon', token: 'down-small-ccm_outlined', size: '16px 16px' },
+            icon_position: 'follow_text',
+            icon_expanded_angle: -180,
+          },
+          border: { color: 'green', corner_radius: '5px' },
+          padding: '8px 8px 8px 8px',
+          elements: [{ tag: 'markdown', content: result }],
+        },
+      ]
+    : [{ tag: 'markdown', content: '已收到你的操作,这张卡已完成。' }];
+  return {
+    schema: '2.0',
+    config: { summary: { content: '已完成' } },
+    header: { title: { tag: 'plain_text', content: '✅ 已完成' }, template: 'green' },
+    body: { elements },
+  };
+}
+
+/**
  * Build an interactive "ask" card from an agent-authored spec. The bridge signs
  * the card (via `sign`) so clicks are cryptographically bound — the agent never
  * touches the secret.
@@ -74,10 +104,11 @@ function callbackValue(
  * nonce makes the WHOLE card answered-once: the first valid click consumes it,
  * any later click (even on a different option) is rejected.
  *
- * Two shapes:
- *  - `questions[]` (AskUserQuestion model) → a schema-2.0 `form` with
- *    select / multi-select / text-input, answered in one submit (form_value).
- *  - `buttons[]` (quick one-click) → a v1 action card (proven to render).
+ * Both shapes are schema-2.0 cards sent as managed card entities, so a click
+ * can reliably update them in place (cardkit) — the same lifecycle /config uses.
+ *  - `questions[]` (AskUserQuestion model) → a `form` with select / multi-select
+ *    / checkbox / date / person / text-input, answered in one submit.
+ *  - `buttons[]` (quick one-click) → 2.0 buttons (callback via `behaviors`).
  */
 export function askCard(spec: AskCardSpec, askerOpenId?: string, sign?: AgentCardSigner): object {
   const operator = restrictOperator(spec, askerOpenId);
@@ -87,25 +118,45 @@ export function askCard(spec: AskCardSpec, askerOpenId?: string, sign?: AgentCar
     return buildQuestionsForm(spec, token);
   }
 
+  const header = spec.header ? String(spec.header) : '请选择';
   const elements: object[] = [];
-  if (spec.text) elements.push(divMd(String(spec.text)));
-  if (Array.isArray(spec.buttons) && spec.buttons.length > 0) {
-    elements.push(
-      actions(
-        spec.buttons.slice(0, 12).map((b) => ({
-          text: String(b?.text ?? 'OK'),
-          style: b?.style,
-          value: callbackValue(
-            b?.value && typeof b.value === 'object' && !Array.isArray(b.value)
-              ? (b.value as Record<string, unknown>)
-              : { value: b?.value ?? b?.text ?? null },
-            token,
-          ),
-        })),
-      ),
-    );
+  if (spec.text) elements.push({ tag: 'markdown', content: String(spec.text) });
+  const buttons = Array.isArray(spec.buttons) ? spec.buttons.slice(0, 12) : [];
+  if (buttons.length > 0) {
+    elements.push({
+      tag: 'column_set',
+      flex_mode: 'flow',
+      horizontal_spacing: 'small',
+      columns: buttons.map((b) => ({
+        tag: 'column',
+        width: 'auto',
+        elements: [
+          {
+            tag: 'button',
+            text: { tag: 'plain_text', content: String(b?.text ?? 'OK') },
+            type: b?.style === 'danger' ? 'danger' : b?.style === 'primary' ? 'primary' : 'default',
+            behaviors: [
+              {
+                type: 'callback',
+                value: callbackValue(
+                  b?.value && typeof b.value === 'object' && !Array.isArray(b.value)
+                    ? (b.value as Record<string, unknown>)
+                    : { value: b?.value ?? b?.text ?? null },
+                  token,
+                ),
+              },
+            ],
+          },
+        ],
+      })),
+    });
   }
-  return shell(spec.header ? String(spec.header) : '请选择', elements);
+  return {
+    schema: '2.0',
+    config: { summary: { content: header } },
+    header: { title: { tag: 'plain_text', content: header }, template: 'blue' },
+    body: { elements },
+  };
 }
 
 /**
@@ -197,17 +248,15 @@ function buildQuestionsForm(spec: AskCardSpec, token?: string): object {
     text: { tag: 'plain_text', content: '📮 提交' },
     type: 'primary',
     form_action_type: 'submit',
-    // schema-2.0 buttons fire a server callback via `behaviors`, NOT via a bare
-    // `value` (that's the v1 way). Without this the submit collects form_value
-    // locally but never sends card.action.trigger to us. Keep `value` too as a
-    // fallback carrier for SDKs that read it.
-    value: submitValue,
+    // Callback fires via `behaviors` only (the schema-2.0 way, exactly like the
+    // /config submit button). A top-level `value` here would make Feishu also
+    // treat it as a v1 action and re-render the form, reverting our lock.
     behaviors: [{ type: 'callback', value: submitValue }],
   });
 
   return {
     schema: '2.0',
-    config: V2_CONFIG,
+    config: { summary: { content: spec.header ? String(spec.header) : '需要你的确认' } },
     header: {
       title: { tag: 'plain_text', content: spec.header ? String(spec.header) : '需要你的确认' },
       template: 'blue',

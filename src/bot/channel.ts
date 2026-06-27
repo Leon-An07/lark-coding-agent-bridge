@@ -28,6 +28,7 @@ import {
 import { renderText } from '../card/text-renderer';
 import { askCard } from '../card/templates';
 import { extractAgentCardSpecs, isInteractiveSpec, stripAgentCardBlocks } from '../card/agent-card';
+import { CARDKIT_SETTLE_MS, registerManagedCard, sendManagedCard } from '../card/managed';
 import { tryHandleCommand, type Controls } from '../commands';
 import type { AppConfig } from '../config/schema';
 import {
@@ -851,7 +852,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const markdownReply = (s: RunState): string => {
     const body = renderText(filterForPrefs(s));
     if (body.trim() || s.terminal !== 'done') return body;
-    return replyIsCardOnly(s) ? '请在下方卡片中选择 👇' : body;
+    // Card-only reply: this bubble morphs into the card after a short settle, so
+    // show a neutral "generating" state during that window (not an instruction).
+    return replyIsCardOnly(s) ? '⏳ 正在生成卡片…' : body;
   };
 
   try {
@@ -928,13 +931,14 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     } else if (replyMode === 'markdown') {
       let latestState: RunState = initialState;
       let producerStarted = false;
-      // The markdown reply is backed by a Lark card entity; `cardId`/`sequence`
-      // (runtime fields on the SDK controller) let us morph it in place when the
-      // whole reply is one interactive card.
+      // `cardId`/`messageId` are runtime fields on the SDK markdown controller —
+      // the streaming reply is itself a Lark card entity, which we morph into the
+      // agent card when the whole reply is a single card.
       let markdownCtrl:
         | {
             setContent(markdown: string): Promise<void>;
             readonly cardId?: string;
+            readonly messageId?: string;
             readonly sequence?: number;
           }
         | undefined;
@@ -976,28 +980,40 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           }
         },
       });
-      // If the whole reply is one interactive card, morph the markdown card
-      // entity IN PLACE into it (cardkit update by cardId — the same mechanism
-      // /config uses to turn its form into a result) so the reply bubble BECOMES
-      // the card. On any failure we keep the lead-in and the card is sent
-      // separately below.
-      if (!replyIsAgentCard && markdownCtrl?.cardId) {
-        const card = soleReplyCard(finalRunState);
-        if (card) {
+      // When the whole reply is one interactive card, morph the streaming bubble
+      // IN PLACE into it (single bubble, no separate card). The morph runs
+      // DETACHED + DELAYED: the SDK keeps writing to this card entity right after
+      // the text ends (finishStreamingCard + a trailing throttle flush), so an
+      // immediate morph races those and flickers. Waiting out the settle window
+      // makes our update the LAST write, so it sticks. We register the entity so
+      // the click can lock it; on any failure we fall back to a separate card.
+      const morphCard = soleReplyCard(finalRunState);
+      if (morphCard && markdownCtrl?.cardId && markdownCtrl?.messageId) {
+        replyIsAgentCard = true; // don't also send it as a separate card below
+        const cardId = markdownCtrl.cardId;
+        const cardMsgId = markdownCtrl.messageId;
+        const baseSeq = markdownCtrl.sequence ?? 0;
+        void (async () => {
+          await new Promise((r) => setTimeout(r, CARDKIT_SETTLE_MS));
+          // Larger than the SDK's streaming sequences on this card, but well within
+          // cardkit's int range (Date.now() overflows it → 400).
+          const seq = baseSeq + 1000;
           try {
-            await channel.updateCardById(
-              markdownCtrl.cardId,
-              card,
-              (markdownCtrl.sequence ?? 0) + 1000,
-            );
-            replyIsAgentCard = true;
+            await channel.updateCardById(cardId, morphCard, seq);
+            registerManagedCard(cardMsgId, cardId, seq); // so the click-lock can update it
           } catch (err) {
-            log.warn('agent-card', 'markdown-morph-failed', {
+            log.warn('agent-card', 'morph-failed', {
               scope,
               err: err instanceof Error ? err.message : String(err),
             });
+            // Morph didn't take — reset the "generating" bubble to a lead-in and
+            // send the card as a separate message so the user still gets it.
+            await markdownCtrl?.setContent('请在下方卡片中选择 👇').catch(() => {});
+            await sendManagedCard(channel, chatId, morphCard, { replyTo: lastMsg.messageId }).catch(
+              (e) => log.fail('agent-card', e, { scope, step: 'morph-fallback' }),
+            );
           }
-        }
+        })();
       }
     } else {
       // text mode: drain the agent stream without sending anything during
@@ -1019,14 +1035,17 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     }
 
     // Send any interactive cards the agent authored via ```lark-card``` blocks,
-    // after the text reply so they appear below it. Skipped when the reply was
-    // already morphed into a single card above (no duplicate). Signing happens
-    // in `signAgentCard` (defined before the run) so the agent never holds the
-    // secret; the token carries operator binding + single-use nonce + 24h exp.
+    // after the text reply so they appear below it. Sent as MANAGED card
+    // entities (cardkit) so a click can reliably lock them in place — the same
+    // lifecycle /config uses. Signing happens in `signAgentCard` (defined before
+    // the run) so the agent never holds the secret; the token carries operator
+    // binding + single-use nonce + 24h expiry.
     for (const spec of replyIsAgentCard ? [] : extractAgentCardSpecs(replyTextOf(finalRunState))) {
       if (!isInteractiveSpec(spec)) continue;
       try {
-        await channel.send(chatId, { card: askCard(spec, firstMsg.senderId, signAgentCard) }, sendOpts);
+        await sendManagedCard(channel, chatId, askCard(spec, firstMsg.senderId, signAgentCard), {
+          replyTo: lastMsg.messageId,
+        });
         log.info('agent-card', 'sent', {
           scope,
           buttons: spec.buttons?.length ?? 0,
