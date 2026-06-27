@@ -33,12 +33,20 @@ import { tryHandleCommand, type Controls } from '../commands';
 import type { AppConfig } from '../config/schema';
 import {
   getAgentStopGraceMs,
+  getCotMessages,
   getMaxConcurrentRuns,
   getMessageReplyMode,
   getRequireMentionInGroup,
   getRunIdleTimeoutMs,
   getShowToolCalls,
 } from '../config/schema';
+import {
+  CotClient,
+  CotPublisher,
+  type CotRequester,
+  consumeCotEvents,
+  finalAnswerOnlyState,
+} from './cot';
 import { resolveAppSecret } from '../config/secret-resolver';
 import { log, reportMetric, withTrace } from '../core/logger';
 import { MediaCache, type LocalAttachment } from '../media/cache';
@@ -247,6 +255,12 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
 
   const channel = createLarkChannel(opts);
   const media = new MediaCache(channel, deps.appPaths?.mediaDir);
+  // Native COT (思考过程) client — reuses the channel's already-authed lark
+  // Client (tenant token + domain). Dormant unless preferences.cotMessages is
+  // brief/detailed; degrades to a no-op if the app lacks message_cot perms.
+  const cotClient = new CotClient(
+    (channel as unknown as { rawClient: CotRequester }).rawClient,
+  );
 
   // Pending → run handoff: while a run is active on a chat, block its pending
   // queue so messages keep accumulating without flushing. When the run ends,
@@ -271,6 +285,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           batch,
           controls,
           callbackAuth,
+          cotClient,
           activePolicyFingerprints,
           scope,
           mode,
@@ -607,6 +622,7 @@ interface RunBatchDeps {
   batch: NormalizedMessage[];
   controls: Controls;
   callbackAuth?: CallbackAuth;
+  cotClient?: CotClient;
   activePolicyFingerprints: Map<string, string>;
   scope: string;
   mode: ChatMode;
@@ -623,6 +639,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     batch,
     controls,
     callbackAuth,
+    cotClient,
     activePolicyFingerprints,
     scope,
     mode,
@@ -801,12 +818,37 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       }
     : {};
 
+  // COT (思考过程): when enabled AND the native channel is reachable, the live
+  // process streams to a separate COT message and the reply becomes just the
+  // final answer. Default `off` → dormant. Started here (before the reaction) so
+  // the working-reaction is skipped when COT is the live indicator; degrades to
+  // the normal reply when CreateCOT is unavailable (no message_cot perm).
+  const cotMode = getCotMessages(controls.cfg);
+  let cotPublisher: CotPublisher | undefined;
+  if (cotMode !== 'off' && cotClient) {
+    cotPublisher = new CotPublisher({
+      client: cotClient,
+      chatId,
+      originMessageId: lastMsg.messageId,
+      runId: execution.runId,
+      scope,
+      inputPreview: lastMsg.content,
+    });
+    await cotPublisher.start();
+    if (cotPublisher.disabled) {
+      log.warn('cot', 'fallback-reply', { scope, reason: 'create-disabled' });
+      cotPublisher = undefined;
+    }
+  }
+
   // For non-card modes Claude's output doesn't surface visually until either
   // a first streamed token (markdown mode) or the whole run ends (text mode).
   // Add a "Typing" reaction to the triggering message as an instant ack, but
   // never let that outbound API call block agent event draining.
   const reactionPromise =
-    replyMode === 'card' ? undefined : addWorkingReaction(channel, lastMsg.messageId);
+    cotPublisher || replyMode === 'card'
+      ? undefined
+      : addWorkingReaction(channel, lastMsg.messageId);
 
   // Captured across whichever reply mode runs, so we can extract any
   // ```lark-card``` blocks the agent authored and send them as real cards.
@@ -858,7 +900,32 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   };
 
   try {
-    if (replyMode === 'card') {
+    if (cotPublisher) {
+      // COT fold = thinking + tool calls (the process). The final answer is the
+      // VISIBLE reply below — outside the fold, like common AI tools. (The COT's
+      // own consumeCotEvents owns the COT lifecycle incl. finish; we don't.)
+      const cotDone = consumeCotEvents(execution.subscribe(), cotPublisher, { detail: cotMode });
+      const finalState = await processAgentStream(
+        handle,
+        eventStream,
+        scope,
+        idleTimeoutMs,
+        recordSession,
+        async () => {},
+      );
+      finalRunState = finalState;
+      await cotDone;
+      // Visible final answer (one-shot; the COT already gave the live feel).
+      // If a failed run produced no answer text, fall back to the full render so
+      // the error surfaces instead of a silent empty reply.
+      let body = renderText(filterForPrefs(finalAnswerOnlyState(finalState)));
+      if (!body.trim() && finalState.terminal === 'error') {
+        body = renderText(filterForPrefs(finalState));
+      }
+      if (body.trim()) {
+        await channel.send(chatId, { markdown: body }, sendOpts);
+      }
+    } else if (replyMode === 'card') {
       let latestState: RunState = initialState;
       let producerStarted = false;
       let cardCtrl:

@@ -29,9 +29,16 @@ import {
   updateManagedCard,
 } from '../card/managed';
 import { helpCard, resumeCard, statusCard, workspacesCard } from '../card/templates';
-import type { AppConfig, AppPreferences, MessageReplyMode, TenantBrand } from '../config/schema';
+import type {
+  AppConfig,
+  AppPreferences,
+  CotMessagesMode,
+  MessageReplyMode,
+  TenantBrand,
+} from '../config/schema';
 import {
   getAgentStopGraceMs,
+  getCotMessages,
   getMaxConcurrentRuns,
   getMessageReplyMode,
   getRequireMentionInGroup,
@@ -1757,6 +1764,7 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
   const card = configFormCard({
     messageReply: getMessageReplyMode(ctx.controls.cfg),
     showToolCalls: getShowToolCalls(ctx.controls.cfg),
+    cotMessages: getCotMessages(ctx.controls.cfg),
     maxConcurrentRuns: getMaxConcurrentRuns(ctx.controls.cfg),
     runIdleTimeoutMinutes: ms ? Math.round(ms / 60_000) : 0,
     requireMentionInGroup: getRequireMentionInGroup(ctx.controls.cfg),
@@ -1807,6 +1815,9 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
       : 'card';
   const rawTools = String(fv.show_tool_calls ?? '').trim();
   const showToolCalls = rawTools !== 'hide';
+  const rawCot = String(fv.cot_messages ?? '').trim();
+  const cotMessages: CotMessagesMode =
+    rawCot === 'brief' || rawCot === 'detailed' ? rawCot : 'off';
   // Parse max_concurrent_runs; invalid input falls back to current value.
   const rawMaxCC = String(fv.max_concurrent_runs ?? '').trim();
   const parsedMaxCC = Number(rawMaxCC);
@@ -1870,6 +1881,7 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
       // explicitly picks any option gets out of the legacy-coerce path.
       messageReplyMigrated: true,
       showToolCalls,
+      cotMessages,
       maxConcurrentRuns,
       runIdleTimeoutMinutes,
       requireMentionInGroup,
@@ -1929,6 +1941,7 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
       configSavedCard({
         messageReply,
         showToolCalls,
+        cotMessages,
         maxConcurrentRuns,
         runIdleTimeoutMinutes,
         requireMentionInGroup,

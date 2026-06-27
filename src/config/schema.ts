@@ -67,6 +67,7 @@ export interface SecretsConfig {
  * `markdown`. See `messageReplyMigrated` for the auto-coercion logic.
  */
 export type MessageReplyMode = 'card' | 'markdown' | 'text';
+export type CotMessagesMode = 'off' | 'brief' | 'detailed';
 
 /**
  * Access control settings. Empty lists are fail-closed in the v2 policy:
@@ -103,6 +104,13 @@ export interface AppPreferences {
    * text answer and want to hide the "工具调用过程".
    */
   showToolCalls?: boolean;
+  /**
+   * Send a separate Lark COT (思考过程) message before the final answer via the
+   * native message_cot OpenAPI. `off` (default) = no COT; `brief` = key steps +
+   * tool titles; `detailed` = also reasoning text + tool args/output. The
+   * publisher degrades to a no-op if the app lacks the message_cot permission.
+   */
+  cotMessages?: CotMessagesMode | 'on' | 'simple';
   /**
    * Cap on concurrent claude runs across all chats / topics. Excess runs
    * queue FIFO. Default 10. Mostly relevant for topic groups where each
@@ -199,6 +207,15 @@ export function getMessageReplyMode(cfg: AppConfig): MessageReplyMode {
 /** Resolve the show-tool-calls preference with default fallback. */
 export function getShowToolCalls(cfg: AppConfig): boolean {
   return cfg.preferences?.showToolCalls !== false;
+}
+
+/** Resolve the COT-messages preference. Default `off`. Legacy `on`/`simple`
+ * map to detailed/brief for forward-compat. */
+export function getCotMessages(cfg: AppConfig): CotMessagesMode {
+  const raw = cfg.preferences?.cotMessages;
+  if (raw === 'brief' || raw === 'simple') return 'brief';
+  if (raw === 'detailed' || raw === 'on') return 'detailed';
+  return 'off';
 }
 
 /** Resolve the max-concurrent-runs preference with default + sanity clamp. */

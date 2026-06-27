@@ -1,10 +1,11 @@
 import type { KnownChat } from '../bot/lark-info';
 import type { LarkCliIdentityPreset } from '../config/profile-schema';
-import type { MessageReplyMode } from '../config/schema';
+import type { CotMessagesMode, MessageReplyMode } from '../config/schema';
 
 export interface ConfigFormOpts {
   messageReply: MessageReplyMode;
   showToolCalls: boolean;
+  cotMessages: CotMessagesMode;
   maxConcurrentRuns: number;
   /** 0 means "disabled". */
   runIdleTimeoutMinutes: number;
@@ -136,6 +137,23 @@ export function configFormCard(opts: ConfigFormOpts): object {
               options: [
                 { text: { tag: 'plain_text', content: '显示(默认)' }, value: 'show' },
                 { text: { tag: 'plain_text', content: '隐藏' }, value: 'hide' },
+              ],
+            },
+            {
+              tag: 'markdown',
+              content:
+                '\n**思考过程(COT)**\n' +
+                '_关闭:只发最终答案_\n' +
+                '_精简 / 详细:最终答案前,用独立的「思考过程」消息实时展示步骤与工具调用(详细含推理与参数)。需应用具备 message_cot 权限,缺失则自动回退_',
+            },
+            {
+              tag: 'select_static',
+              name: 'cot_messages',
+              initial_option: opts.cotMessages,
+              options: [
+                { text: { tag: 'plain_text', content: '关闭(默认)' }, value: 'off' },
+                { text: { tag: 'plain_text', content: '精简' }, value: 'brief' },
+                { text: { tag: 'plain_text', content: '详细' }, value: 'detailed' },
               ],
             },
             {
