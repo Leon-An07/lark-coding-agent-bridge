@@ -13,6 +13,24 @@ const byMessageId = new Map<string, ManagedEntry>();
 // cards nobody clicks would otherwise accumulate forever. Evict oldest first.
 const MAX_TRACKED = 500;
 
+// The latest still-open agent card per scope, so a plain text reply (instead of
+// a click) can auto-close it. Stores the rendered card to disable its buttons.
+const openCardByScope = new Map<string, { messageId: string; card: object }>();
+
+/** Remember the open agent card for a scope (overwrites any prior). */
+export function setScopeOpenCard(scope: string, messageId: string, card: object): void {
+  openCardByScope.set(scope, { messageId, card });
+}
+
+/** Get + clear the scope's open card (whether it's being closed or answered). */
+export function takeScopeOpenCard(
+  scope: string,
+): { messageId: string; card: object } | undefined {
+  const entry = openCardByScope.get(scope);
+  openCardByScope.delete(scope);
+  return entry;
+}
+
 /** Lark client-side keeps a form/card locked while the cardAction handler is
  * pending, then snaps the card back to its cached state on return. So an update
  * must run AFTER this settle window (and detached from the handler) to stick.

@@ -26,9 +26,16 @@ import {
   type RunState,
 } from '../card/run-state';
 import { renderText } from '../card/text-renderer';
-import { askCard } from '../card/templates';
+import { askCard, disabledCard } from '../card/templates';
 import { extractAgentCardSpecs, isInteractiveSpec, stripAgentCardBlocks } from '../card/agent-card';
-import { CARDKIT_SETTLE_MS, registerManagedCard, sendManagedCard } from '../card/managed';
+import {
+  CARDKIT_SETTLE_MS,
+  registerManagedCard,
+  sendManagedCard,
+  setScopeOpenCard,
+  takeScopeOpenCard,
+  updateManagedCard,
+} from '../card/managed';
 import { tryHandleCommand, type Controls } from '../commands';
 import type { AppConfig } from '../config/schema';
 import {
@@ -76,9 +83,11 @@ import type { AppPaths } from '../config/app-paths';
 
 const DEBOUNCE_MS = 600;
 /** How long an agent interactive card stays clickable (signed token TTL).
- * Generous so the user can come back later, but bounded so a click can't land
- * in a long-stale session; on expiry the dispatcher asks them to re-trigger. */
-const AGENT_CARD_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+ * Just a backstop: the common cases die immediately (click → ✅ locked, text
+ * reply → greyed). This only bounds a card nobody ever touched — long enough to
+ * step away and come back, short enough that a day-old click can't land in a
+ * stale session. On expiry the dispatcher greys it + asks them to re-trigger. */
+const AGENT_CARD_TTL_MS = 60 * 60 * 1000; // 1h
 const STREAM_TERMINAL_GRACE_MS = 3000;
 const REACTION_CLEANUP_GRACE_MS = 1000;
 
@@ -652,6 +661,22 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const chatId = firstMsg.chatId;
   const threadId = firstMsg.threadId;
 
+  // The user replied with text instead of clicking — if the previous turn left
+  // an interactive card open, auto-close it (grey out its buttons) so it can't
+  // also be clicked. A card click comes in as 'card_action' and is handled by
+  // the dispatcher's lock instead, so skip those. Best-effort + detached.
+  if (firstMsg.rawContentType !== 'card_action') {
+    const open = takeScopeOpenCard(scope);
+    if (open) {
+      void updateManagedCard(channel, open.messageId, disabledCard(open.card)).catch((err) =>
+        log.warn('agent-card', 'auto-close-failed', {
+          scope,
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
+
   const resourceItems = batch.flatMap((m) =>
     m.resources.map((r) => ({ messageId: m.messageId, resource: r })),
   );
@@ -857,8 +882,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const replyTextOf = (s: RunState): string =>
     s.blocks.map((b) => (b.kind === 'text' ? b.content : '')).join('');
   // The bridge signs each agent callback here (the agent never holds the secret):
-  // the token binds scope/chat/operator/action + a single-use nonce + a 24h
-  // expiry, signed run-independently (runId:'') so a click works after the turn.
+  // the token binds scope/chat/operator/action + a single-use nonce + an
+  // expiry (AGENT_CARD_TTL_MS), signed run-independently (runId:'') so a click
+  // works after the turn.
   const signAgentCard = callbackAuth
     ? (operatorOpenId: string): string =>
         callbackAuth.sign({
@@ -1068,6 +1094,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           try {
             await channel.updateCardById(cardId, morphCard, seq);
             registerManagedCard(cardMsgId, cardId, seq); // so the click-lock can update it
+            setScopeOpenCard(scope, cardMsgId, morphCard); // so a text reply can auto-close it
           } catch (err) {
             log.warn('agent-card', 'morph-failed', {
               scope,
@@ -1076,9 +1103,13 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
             // Morph didn't take — reset the "generating" bubble to a lead-in and
             // send the card as a separate message so the user still gets it.
             await markdownCtrl?.setContent('请在下方卡片中选择 👇').catch(() => {});
-            await sendManagedCard(channel, chatId, morphCard, { replyTo: lastMsg.messageId }).catch(
-              (e) => log.fail('agent-card', e, { scope, step: 'morph-fallback' }),
-            );
+            const sent = await sendManagedCard(channel, chatId, morphCard, {
+              replyTo: lastMsg.messageId,
+            }).catch((e) => {
+              log.fail('agent-card', e, { scope, step: 'morph-fallback' });
+              return undefined;
+            });
+            if (sent) setScopeOpenCard(scope, sent.messageId, morphCard);
           }
         })();
       }
@@ -1106,13 +1137,15 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     // entities (cardkit) so a click can reliably lock them in place — the same
     // lifecycle /config uses. Signing happens in `signAgentCard` (defined before
     // the run) so the agent never holds the secret; the token carries operator
-    // binding + single-use nonce + 24h expiry.
+    // binding + single-use nonce + expiry.
     for (const spec of replyIsAgentCard ? [] : extractAgentCardSpecs(replyTextOf(finalRunState))) {
       if (!isInteractiveSpec(spec)) continue;
       try {
-        await sendManagedCard(channel, chatId, askCard(spec, firstMsg.senderId, signAgentCard), {
+        const card = askCard(spec, firstMsg.senderId, signAgentCard);
+        const sent = await sendManagedCard(channel, chatId, card, {
           replyTo: lastMsg.messageId,
         });
+        setScopeOpenCard(scope, sent.messageId, card); // so a text reply can auto-close it
         log.info('agent-card', 'sent', {
           scope,
           buttons: spec.buttons?.length ?? 0,

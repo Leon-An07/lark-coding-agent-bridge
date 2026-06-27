@@ -13,7 +13,7 @@
  * The bridge (see `runAgentBatch`) intercepts the block, builds a real Lark
  * card, and SIGNS each callback with a bridge token (the agent never holds the
  * secret). One token is shared per card, so its single-use nonce makes the card
- * answered-once; the token also carries operator binding (`restrict`) and a 24h
+ * answered-once; the token also carries operator binding (`restrict`) and an
  * expiry. When the user clicks, the dispatcher verifies the token and forwards
  * the click back into the session as a `[card-click] {...}` message. (If the
  * bridge has no signing key, it falls back to a tokenless, bot-authored value.)

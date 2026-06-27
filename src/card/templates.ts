@@ -96,6 +96,54 @@ export function lockedCard(result?: string): object {
 }
 
 /**
+ * A copy of a sent agent card with every button disabled (and its callback
+ * stripped) plus a note prepended. Used to auto-close a card the user
+ * superseded by replying with text instead of clicking — the options stay
+ * visible (greyed) but can no longer be clicked.
+ */
+export function disabledCard(card: object): object {
+  const clone = JSON.parse(JSON.stringify(card)) as {
+    header?: { template?: string };
+    body?: { elements?: unknown[] };
+  };
+  disableButtons(clone);
+  if (clone.header) clone.header.template = 'grey'; // grey header signals "closed"
+  const body = (clone.body ??= {});
+  (body.elements ??= []).unshift({ tag: 'markdown', content: '_已改用文字回复,此卡已关闭_' });
+  return clone;
+}
+
+/** Recursively grey out every button and strip its callback so it's inert. */
+function disableButtons(node: unknown): void {
+  if (Array.isArray(node)) {
+    for (const child of node) disableButtons(child);
+    return;
+  }
+  if (!node || typeof node !== 'object') return;
+  const obj = node as Record<string, unknown>;
+  if (obj.tag === 'button') {
+    obj.disabled = true;
+    delete obj.behaviors;
+    delete obj.value;
+  }
+  for (const key of Object.keys(obj)) disableButtons(obj[key]);
+}
+
+/**
+ * The card an expired agent card is greyed into when someone clicks it after
+ * the token expiry — a grey, button-less "⏰ 已过期" card. Generic (the
+ * original spec isn't available at click time), which is fine: it's dead.
+ */
+export function expiredCard(): object {
+  return {
+    schema: '2.0',
+    config: { summary: { content: '已过期' } },
+    header: { title: { tag: 'plain_text', content: '⏰ 已过期' }, template: 'grey' },
+    body: { elements: [{ tag: 'markdown', content: '这张卡片已过期,请重新发送你的需求。' }] },
+  };
+}
+
+/**
  * Build an interactive "ask" card from an agent-authored spec. The bridge signs
  * the card (via `sign`) so clicks are cryptographically bound — the agent never
  * touches the secret.

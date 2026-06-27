@@ -6,7 +6,7 @@ import {
   resolveAskAnswers,
   stripAgentCardBlocks,
 } from '../../../src/card/agent-card.js';
-import { askCard, lockedCard } from '../../../src/card/templates.js';
+import { askCard, disabledCard, expiredCard, lockedCard } from '../../../src/card/templates.js';
 
 interface FormCard {
   schema: string;
@@ -202,6 +202,65 @@ describe('agent-card', () => {
       const panel = c.body.elements.find((e) => e.tag === 'collapsible_panel');
       expect(panel?.expanded).toBe(false);
       expect(panel?.elements?.[0]?.content).toBe('**db** PG');
+    });
+  });
+
+  describe('disabledCard (auto-close on text reply)', () => {
+    const collectButtons = (
+      node: unknown,
+      out: Array<Record<string, unknown>> = [],
+    ): Array<Record<string, unknown>> => {
+      if (Array.isArray(node)) {
+        for (const n of node) collectButtons(n, out);
+      } else if (node && typeof node === 'object') {
+        const obj = node as Record<string, unknown>;
+        if (obj.tag === 'button') out.push(obj);
+        for (const v of Object.values(obj)) collectButtons(v, out);
+      }
+      return out;
+    };
+
+    it('greys out every button, strips its callback, and prepends a note', () => {
+      const original = askCard({
+        buttons: [{ text: 'A', value: { choice: 'a' } }, { text: 'B', value: { choice: 'b' } }],
+      });
+      const closed = disabledCard(original) as {
+        header: { template: string };
+        body: { elements: Array<{ tag: string; content?: string }> };
+      };
+
+      const buttons = collectButtons(closed);
+      expect(buttons).toHaveLength(2);
+      expect(buttons.every((b) => b.disabled === true)).toBe(true);
+      expect(buttons.every((b) => !('behaviors' in b) && !('value' in b))).toBe(true);
+
+      expect(closed.header.template).toBe('grey'); // greyed header signals closed
+      expect(closed.body.elements[0]?.tag).toBe('markdown');
+      expect(closed.body.elements[0]?.content).toContain('已改用文字回复');
+
+      // Deep clone — the original card is untouched (still clickable).
+      expect(collectButtons(original).some((b) => b.disabled === true)).toBe(false);
+    });
+
+    it('disables the submit button of a questions form too', () => {
+      const closed = disabledCard(
+        askCard({ questions: [{ question: 'db?', options: [{ label: 'PG' }] }] }),
+      );
+      const buttons = collectButtons(closed);
+      expect(buttons.length).toBeGreaterThanOrEqual(1);
+      expect(buttons.every((b) => b.disabled === true)).toBe(true);
+    });
+  });
+
+  describe('expiredCard (grey-out on expired click)', () => {
+    it('is a grey, button-less "已过期" card', () => {
+      const c = expiredCard() as {
+        header: { template: string; title: { content: string } };
+        body: { elements: Array<{ tag: string }> };
+      };
+      expect(c.header.template).toBe('grey');
+      expect(c.header.title.content).toContain('已过期');
+      expect(c.body.elements.every((e) => !['button', 'action', 'form'].includes(e.tag))).toBe(true);
     });
   });
 

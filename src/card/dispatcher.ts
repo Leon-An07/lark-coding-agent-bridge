@@ -6,8 +6,14 @@ import type { PendingQueue } from '../bot/pending-queue';
 import type { ProcessPool } from '../bot/process-pool';
 import type { CallbackAuth } from './callback-auth';
 import { resolveAskAnswers, type AskMapEntry } from './agent-card';
-import { lockedCard } from './templates';
-import { CARDKIT_SETTLE_MS, forgetManagedCard, isManaged, updateManagedCard } from './managed';
+import { expiredCard, lockedCard } from './templates';
+import {
+  CARDKIT_SETTLE_MS,
+  forgetManagedCard,
+  isManaged,
+  takeScopeOpenCard,
+  updateManagedCard,
+} from './managed';
 import { runCommandHandler, type CommandContext, type Controls } from '../commands';
 import { log } from '../core/logger';
 import { canUseDm, canUseGroup } from '../policy/access';
@@ -138,7 +144,7 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
   // the click as a follow-up message, with full context of what it sent.
   //
   // Agent card callback. The bridge SIGNS these when it renders them (operator
-  // binding from `restrict`, single-use nonce, and a 24h expiry all live in the
+  // binding from `restrict`, single-use nonce, and an expiry all live in the
   // signed token — see askCard). So if a token is present it must verify. The
   // tokenless path remains only for the degraded case where the bridge has no
   // signing key (no app secret resolved) — then the bot-authored, unforgeable
@@ -148,6 +154,8 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
       const reason = verifyBridgeToken(deps, payload, scope, 'agent_callback');
       if (reason !== null) {
         if (reason === 'expired') {
+          takeScopeOpenCard(scope); // drop the entry so a later text reply won't re-close this card
+          scheduleCardReplace(deps, expiredCard()); // grey it in place (best-effort)
           try {
             await deps.channel.send(deps.evt.chatId, {
               text: '⏰ 这张卡片已过期，请重新发送你的需求，我会发一张新的。',
@@ -165,6 +173,7 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
     // card back to its cached form on return, so an inline update flashes then
     // reverts. Returning immediately lets the snap-back happen first; the delayed
     // update then sticks. The nonce already blocks a real second submit.
+    takeScopeOpenCard(scope); // answered by click — don't let a later text reply re-close it
     scheduleAgentCardLock(deps, payload, formValue);
     forwardToAgent(deps, payload, formValue, scope, threadId, mode);
     return;
@@ -184,10 +193,21 @@ function scheduleAgentCardLock(
   payload: Record<string, unknown>,
   formValue: Record<string, unknown> | undefined,
 ): void {
+  scheduleCardReplace(deps, lockedCard(clickResultSummary(payload, formValue)));
+}
+
+/**
+ * Replace the just-clicked card in place, detached + delayed past the snap-back
+ * window. Managed cards update by card_id (cardkit); plain inline cards patch by
+ * message_id. Best-effort — never blocks the click. Used for both the
+ * done-lock and the expired-grey. The grey only works while the card is still
+ * tracked in memory (lost on restart); after a restart the text notice is the
+ * fallback.
+ */
+function scheduleCardReplace(deps: CardDispatchDeps, card: object): void {
   const messageId = deps.evt.messageId;
   if (!messageId) return;
   const managed = isManaged(messageId);
-  const card = lockedCard(clickResultSummary(payload, formValue));
   void (async () => {
     await new Promise((resolve) => setTimeout(resolve, CARDKIT_SETTLE_MS));
     try {
@@ -199,7 +219,7 @@ function scheduleAgentCardLock(
         await deps.channel.updateCard(messageId, card);
       }
     } catch (err) {
-      log.warn('cardAction', 'lock-failed', {
+      log.warn('cardAction', 'card-replace-failed', {
         messageId,
         err: err instanceof Error ? err.message : String(err),
       });
