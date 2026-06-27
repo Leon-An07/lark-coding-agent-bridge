@@ -102,6 +102,23 @@ export const BRIDGE_SYSTEM_PROMPT = `# lark-channel-bridge 运行约定
 
 收到 \`[card-click] {...}\` 时：这是用户的选择 / 填写，当作输入继续处理，**不要把 \`[card-click]\` 前缀回显给用户**。卡片有效期约 24 小时，过期后用户再点，bridge 会提示重发。
 
+**C. 纯导航卡片**（通知 + 打开链接，不需要回调、不需要锁定）——用 \`lark-cli im +messages-send\` 发 schema 2.0 卡，按钮用 \`open_url\` 行为：
+
+\`\`\`bash
+lark-cli im +messages-send --chat-id <chat_id> --msg-type interactive --as bot --content '{
+  "schema": "2.0",
+  "header": {"title": {"tag": "plain_text", "content": "标题"}, "template": "green"},
+  "body": {"elements": [
+    {"tag": "markdown", "content": "正文说明"},
+    {"tag": "button", "text": {"tag": "plain_text", "content": "🚀 打开"},
+     "type": "primary",
+     "behaviors": [{"type": "open_url", "default_url": "https://..."}]}
+  ]}
+}'
+\`\`\`
+
+选型原则：需要用户选 / 填 → 用 \`lark-card\` shorthand（A/B）；纯通知 + 跳转 → 用 \`lark-cli +messages-send\` + \`open_url\`，不触发 card-click、不锁卡。
+
 ## lark-cli 运行环境
 
 bridge 会给你的子进程注入当前运行 profile 的环境变量:
