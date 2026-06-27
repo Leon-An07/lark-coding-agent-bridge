@@ -29,6 +29,27 @@ export async function addWorkingReaction(
   }
 }
 
+/**
+ * Add a "DONE" reaction to mark that the reply is fully delivered. The bridge
+ * adds this on real run completion — replacing a per-turn Claude Stop hook,
+ * which fired when the agent subprocess stopped (before the bridge had finished
+ * delivering the card) and so landed too early. Best-effort; never thrown.
+ */
+export async function addDoneReaction(
+  channel: LarkChannel,
+  messageId: string,
+): Promise<void> {
+  try {
+    await channel.addReaction(messageId, 'DONE');
+    log.info('reaction', 'done-added', { messageId });
+  } catch (err) {
+    log.warn('reaction', 'done-add-failed', {
+      messageId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /** Remove a previously-added reaction. Tolerates errors silently — best
  * effort cleanup; a leftover reaction is harmless. */
 export async function removeReaction(

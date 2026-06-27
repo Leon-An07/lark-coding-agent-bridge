@@ -77,7 +77,7 @@ import { startKeepalive } from './keepalive';
 import { PendingQueue } from './pending-queue';
 import { ProcessPool } from './process-pool';
 import { fetchQuotedContext, type QuotedContext } from './quote';
-import { addWorkingReaction, removeReaction } from './reaction';
+import { addDoneReaction, addWorkingReaction, removeReaction } from './reaction';
 import { fetchKnownChats } from './lark-info';
 import type { AppPaths } from '../config/app-paths';
 
@@ -1172,7 +1172,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     log.fail('stream', err);
   } finally {
     activePolicyFingerprints.delete(scope);
-    scheduleWorkingReactionCleanup(channel, lastMsg.messageId, reactionPromise);
+    finalizeRunReactions(channel, lastMsg.messageId, reactionPromise);
   }
 }
 
@@ -1371,37 +1371,45 @@ async function runFallbackReply(
   }
 }
 
-function scheduleWorkingReactionCleanup(
+/**
+ * Run-completion reaction handoff, detached + best-effort: drop the "working"
+ * (Typing) reaction if one was added, then mark the message DONE. The bridge
+ * owns the DONE marker (it used to be a Claude Stop hook) so it lands when the
+ * reply is actually delivered, not when the agent subprocess stops. Runs in
+ * every reply mode — the DONE cue matters most in card/markdown, where the
+ * in-place card update is silent.
+ */
+function finalizeRunReactions(
   channel: LarkChannel,
   messageId: string,
-  reactionPromise: Promise<string | undefined> | undefined,
+  workingReactionPromise: Promise<string | undefined> | undefined,
 ): void {
-  if (!reactionPromise) return;
-
   void (async () => {
-    const reactionResult = reactionPromise.then(
-      (reactionId) => ({ ok: true as const, reactionId }),
-      (err) => ({ ok: false as const, err }),
-    );
-    const settled = await Promise.race([
-      reactionResult,
-      delay(REACTION_CLEANUP_GRACE_MS).then(() => undefined),
-    ]);
-
-    if (!settled) {
-      log.warn('reaction', 'cleanup-deferred', {
-        messageId,
-        graceMs: REACTION_CLEANUP_GRACE_MS,
-      });
-      void reactionResult.then((result) => {
-        if (!result.ok || !result.reactionId) return;
-        void removeReaction(channel, messageId, result.reactionId);
-      });
-      return;
+    if (workingReactionPromise) {
+      const reactionResult = workingReactionPromise.then(
+        (reactionId) => ({ ok: true as const, reactionId }),
+        (err) => ({ ok: false as const, err }),
+      );
+      const settled = await Promise.race([
+        reactionResult,
+        delay(REACTION_CLEANUP_GRACE_MS).then(() => undefined),
+      ]);
+      if (!settled) {
+        // The "working" add is still in flight — defer removal so it can't leak.
+        log.warn('reaction', 'cleanup-deferred', {
+          messageId,
+          graceMs: REACTION_CLEANUP_GRACE_MS,
+        });
+        void reactionResult.then((result) => {
+          if (result.ok && result.reactionId) {
+            void removeReaction(channel, messageId, result.reactionId);
+          }
+        });
+      } else if (settled.ok && settled.reactionId) {
+        await removeReaction(channel, messageId, settled.reactionId);
+      }
     }
-
-    if (!settled.ok || !settled.reactionId) return;
-    await removeReaction(channel, messageId, settled.reactionId);
+    await addDoneReaction(channel, messageId);
   })();
 }
 
