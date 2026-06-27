@@ -146,13 +146,16 @@ async function createHarness(): Promise<Harness> {
     callbackAuth,
     token: (action, nonce = `nonce-${action}`) => {
       nextNonce = nonce;
+      // Agent callbacks are signed run-independently (runId:'' / fp:'') so a
+      // click verifies after the turn ends; command callbacks stay run-bound.
+      const isAgentCb = action === 'agent_callback';
       return callbackAuth.sign({
-        runId: 'run-active',
+        runId: isAgentCb ? '' : 'run-active',
         scope: 'oc_group',
         chatId: 'oc_group',
         operatorOpenId: 'ou_operator',
         action,
-        policyFingerprint: 'fp-1',
+        policyFingerprint: isAgentCb ? '' : 'fp-1',
         ttlMs: 60_000,
       });
     },

@@ -59,36 +59,46 @@ export const BRIDGE_SYSTEM_PROMPT = `# lark-channel-bridge 运行约定
 
 无论哪种,块里都是卡的完整 JSON。解析它来理解结构(按钮、字段、布局)。**不要照抄 XML 标签到回复**——对用户不可见。
 
-## 发交互卡片（按钮、表单）的回调约定
+## 发交互卡片（让用户点选 / 填写，类似 ask-user-question）
 
-你想发一张可交互的卡片让用户点选时：
+需要让用户选 / 填时，**在回复正文里输出一个 \`lark-card\` 代码块**（一小段 JSON）。bridge 会拦下它、生成真正的飞书卡片发出，**代码块本身不显示给用户**。**绝不要用 \`lark-cli\` 发卡或发你自己的回复**——那样 bridge 看不到、回调接不上；你的普通文字回复直接输出即可，bridge 会替你发。
 
-1. 用 \`lark-cli\` 把卡发到 \`bridge_context.chat_id\`：
-   \`lark-cli im send-card --chat-id <chat_id> --card '<json>'\`
-2. 卡片用 CardKit 2.0 schema（\`schema: "2.0"\`）。
-3. **如果你希望用户点按钮后回调到你（让你在同一会话里继续处理）**：
-   - 按钮的 \`value\` 对象**必须**同时包含 \`__bridge_cb: true\` 和 \`bridge_token: "<signed token>"\`。
-   - \`bridge_token\` 必须由 bridge-aware 的 lark-cli 回调签名能力生成；不要猜测、伪造、复用或手写 token。
-   - 如果当前 lark-cli 不能生成 \`bridge_token\`，不要发送回调按钮。改成普通展示卡，让用户用文字回复选择。
-   - 同时可以塞任意其它字段，作为你需要在回调时记住的状态（比如 \`choice\`、\`ticket_id\`）。
-4. 用户点击后，bridge 会校验 \`bridge_token\`，然后把 payload（去掉 \`__bridge_cb\` 和 \`bridge_token\`）作为 \`[card-click] {...}\` 消息发回给你；你的 session 自动续上，能看到自己上轮发了什么卡。
-5. **如果只是展示卡（不需要回调）**，不要加 \`__bridge_cb\` 或 \`bridge_token\`，否则点击会被当成回调并要求签名。
+两种写法，按需求挑：
 
-示例 button：
-\`\`\`json
-{
-  "tag": "button",
-  "text": { "tag": "plain_text", "content": "方案 A" },
-  "behaviors": [{
-    "type": "callback",
-    "value": {
-      "__bridge_cb": true,
-      "bridge_token": "SIGNED_TOKEN_FROM_LARK_CLI",
-      "choice": "a"
-    }
-  }]
-}
+**A. 快速单选**（一个问题 + 多个按钮，点一下立即回调）——最常用：
+\`\`\`\`
+\`\`\`lark-card
+{ "header": "选择方案", "text": "用哪个？",
+  "buttons": [
+    { "text": "方案 A", "value": { "choice": "a" }, "style": "primary" },
+    { "text": "方案 B", "value": { "choice": "b" } }
+  ] }
 \`\`\`
+\`\`\`\`
+每个按钮 \`value\` 放点击后想拿回的字段。点击后你收到 \`[card-click] {"choice":"a"}\`。
+
+**B. 表单**（下拉单选 / 多选、文本输入、可多个问题，填完一起提交）——对应 ask-user-question：
+\`\`\`\`
+\`\`\`lark-card
+{ "questions": [
+    { "header": "数据库", "question": "用哪个数据库？",
+      "options": [ {"label":"Postgres","description":"关系型"}, {"label":"MongoDB","description":"文档型"} ] },
+    { "header": "缓存", "question": "需要哪些缓存层？（可多选）", "multiSelect": true,
+      "options": [ {"label":"Redis"}, {"label":"本地内存"} ] },
+    { "header": "备注", "question": "其它要求？" }
+] }
+\`\`\`
+\`\`\`\`
+- 每个 question 用 \`type\` 选组件（不写则:有 \`options\` 当下拉单选,没有当文本输入）:
+  - \`"type":"select"\`(默认,带 options):下拉单选;加 \`"multiSelect":true\` 变下拉多选;再加 \`"selectStyle":"checkbox"\` 变复选框样式(每项一个勾选框,全部可见)。
+  - \`"type":"input"\`:文本输入框(等价于不给 options)。
+  - \`"type":"date"\`:日期选择器。
+  - \`"type":"person"\`:人员选择(\`multiSelect:true\` 可多选),回传的是 open_id。
+- 用户填完点「提交」,你收到 \`[card-click] {"answers": {"问题文本": "选中的label / 日期 / open_id" 或 ["多选..."]}}\`。
+
+**控制字段**（顶层 \`"restrict"\`，两种写法都支持）：谁能点——缺省 \`"me"\`（只有触发这轮对话的人，群里别人点无效）；\`"anyone"\`（谁都能点，比如群投票，第一个点的人完成）；某人的 \`ou_...\` open_id（只限那个人，open_id 从 \`bridge_context.mentions\` 取）。**每张卡都是一次性的**（被有效点击一次后即失效），不用你设置。
+
+收到 \`[card-click] {...}\` 时：这是用户的选择 / 填写，当作输入继续处理，**不要把 \`[card-click]\` 前缀回显给用户**。卡片有效期约 24 小时，过期后用户再点，bridge 会提示重发。
 
 ## lark-cli 运行环境
 

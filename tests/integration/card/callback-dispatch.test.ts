@@ -100,18 +100,86 @@ describe('signed card callback dispatch', () => {
     expect(queued[0]?.content).toBe('[card-click] {"choice":"a"}');
   });
 
-  it('rejects bridge callbacks when callback auth is unavailable', async () => {
-    const h = await createHarness({ callbackAuth: false });
-    const activeRun = h.agent.run({ runId: 'run-active', prompt: 'running' }) as FakeAgentRun;
-    h.activeRuns.register('oc_group', activeRun);
+  it('forwards tokenless agent-card callbacks, even with no active run', async () => {
+    const h = await createHarness();
+    // An agent-authored card click: no token, no active run (the turn that
+    // sent the card has ended). The value is bot-authored so it forwards —
+    // the same trust model as the unsigned /status buttons.
+    await h.dispatch({ __bridge_cb: true, choice: 'a' });
 
+    const queued = h.pending.cancel('oc_group');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.content).toBe('[card-click] {"choice":"a"}');
+  });
+
+  it('rejects a present-but-invalid bridge_token', async () => {
+    const h = await createHarness();
+    h.activeRuns.register('oc_group', h.agent.run({ runId: 'run-active', prompt: 'running' }));
+    // A token IS present, so it must verify — a forged/garbage token is rejected.
+    await h.dispatch({ __bridge_cb: true, bridge_token: 'bridge_cb.v1.bogus.sig', choice: 'a' });
+
+    expect(h.pending.cancel('oc_group')).toHaveLength(0);
+  });
+
+  it('rejects a signed click bound to a different operator', async () => {
+    const h = await createHarness();
+    // Token operator-bound to ou_other; the actual clicker is ou_operator.
     await h.dispatch({
       __bridge_cb: true,
-      choice: 'unsafe',
+      bridge_token: h.token('agent_callback', { nonce: 'n-op', operatorOpenId: 'ou_other' }),
+      choice: 'a',
     });
-
-    expect(activeRun.stopped).toBe(false);
     expect(h.pending.cancel('oc_group')).toHaveLength(0);
+  });
+
+  it('forwards a wildcard-operator (anyone) signed click from any user', async () => {
+    const h = await createHarness();
+    await h.dispatch({
+      __bridge_cb: true,
+      bridge_token: h.token('agent_callback', { nonce: 'n-any', operatorOpenId: '*' }),
+      choice: 'a',
+    });
+    expect(h.pending.cancel('oc_group')).toHaveLength(1);
+  });
+
+  it('rejects a replayed signed token (single-use nonce)', async () => {
+    const h = await createHarness();
+    const t = h.token('agent_callback', { nonce: 'n-once' });
+    await h.dispatch({ __bridge_cb: true, bridge_token: t, choice: 'a' });
+    expect(h.pending.cancel('oc_group')).toHaveLength(1);
+
+    // Same token again → its nonce is already consumed → dropped.
+    await h.dispatch({ __bridge_cb: true, bridge_token: t, choice: 'a' });
+    expect(h.pending.cancel('oc_group')).toHaveLength(0);
+  });
+
+  it('drops an expired signed token without forwarding', async () => {
+    const h = await createHarness();
+    // harness clock is fixed at 1000; ttl -1 → exp 999 ≤ now → expired.
+    await h.dispatch({
+      __bridge_cb: true,
+      bridge_token: h.token('agent_callback', { nonce: 'n-exp', ttlMs: -1 }),
+      choice: 'a',
+    });
+    expect(h.pending.cancel('oc_group')).toHaveLength(0);
+  });
+
+  it('resolves a questions-form submit into clean {answers} from form_value', async () => {
+    const h = await createHarness();
+    await h.dispatch(
+      {
+        __bridge_cb: true,
+        __ask: [
+          { f: 'q0', q: 'db?', k: 'select' },
+          { f: 'q1', q: 'cache?', k: 'multi' },
+        ],
+      },
+      { q0: 'PG', q1: ['Redis'] }, // form_value
+    );
+
+    const queued = h.pending.cancel('oc_group');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.content).toBe('[card-click] {"answers":{"db?":"PG","cache?":["Redis"]}}');
   });
 });
 
@@ -128,7 +196,7 @@ type Harness = {
   dispatch(value: Record<string, unknown>, formValue?: Record<string, unknown>): Promise<void>;
   token(
     action: string,
-    overrides?: { operatorOpenId?: string; nonce?: string; scope?: string },
+    overrides?: { operatorOpenId?: string; nonce?: string; scope?: string; ttlMs?: number },
   ): string;
 };
 
@@ -191,14 +259,17 @@ async function createHarness(
     auth,
     token: (action, overrides = {}) => {
       nonce = overrides.nonce ?? `nonce-${action}`;
+      // Agent callbacks are signed run-independently (runId:'' / fp:'') so a
+      // click verifies after the turn ends; command callbacks stay run-bound.
+      const isAgentCb = action === 'agent_callback';
       return auth.sign({
-        runId: 'run-active',
+        runId: isAgentCb ? '' : 'run-active',
         scope: overrides.scope ?? 'oc_group',
         chatId: 'oc_group',
         operatorOpenId: overrides.operatorOpenId ?? 'ou_operator',
         action,
-        policyFingerprint: 'fp-1',
-        ttlMs: 60_000,
+        policyFingerprint: isAgentCb ? '' : 'fp-1',
+        ttlMs: overrides.ttlMs ?? 60_000,
       });
     },
     dispatch: (value, formValue) =>

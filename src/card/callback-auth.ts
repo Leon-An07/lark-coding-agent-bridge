@@ -134,11 +134,15 @@ function matchesExpected(
   payload: CallbackPayload,
   expected: CallbackVerifyExpected,
 ): boolean {
+  // `o === '*'` is a wildcard operator: the bridge signs "anyone may click"
+  // agent cards (e.g. a group poll) with it, so any authenticated clicker
+  // passes. All other tokens stay bound to a specific operator.
+  const operatorOk = payload.o === '*' || payload.o === expected.operatorOpenId;
   return (
     payload.r === expected.runId &&
     payload.s === expected.scope &&
     payload.c === expected.chatId &&
-    payload.o === expected.operatorOpenId &&
+    operatorOk &&
     payload.a === expected.action &&
     payload.fp === expected.policyFingerprint
   );

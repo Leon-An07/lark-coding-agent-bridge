@@ -5,6 +5,7 @@ import type { ChatModeCache } from '../bot/chat-mode-cache';
 import type { PendingQueue } from '../bot/pending-queue';
 import type { ProcessPool } from '../bot/process-pool';
 import type { CallbackAuth } from './callback-auth';
+import { resolveAskAnswers, type AskMapEntry } from './agent-card';
 import { runCommandHandler, type CommandContext, type Controls } from '../commands';
 import { log } from '../core/logger';
 import { canUseDm, canUseGroup } from '../policy/access';
@@ -57,6 +58,16 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
     | undefined;
   const formValue = raw?.action?.form_value;
 
+  // Diagnostic: log every card click the moment it reaches us, so we can tell
+  // "event never arrived" (no log) apart from "arrived but dropped" (log + a
+  // skip reason). Cheap, one line per click.
+  log.info('cardAction', 'received', {
+    chatId,
+    operator: operatorId.slice(-6),
+    keys: Object.keys(payload).join(','),
+    hasForm: Boolean(formValue),
+  });
+
   // Resolve the click's session scope. For topic groups we need to know
   // the message's thread_id so the action targets the right topic's
   // session — look up the carrier message (the card lives on it) once.
@@ -83,7 +94,7 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
 
   const cmd = typeof payload.cmd === 'string' ? payload.cmd : '';
   if (cmd) {
-    if (isSignedBridgeCallback(payload) && !verifyBridgeToken(deps, payload, scope, cmd)) {
+    if (isSignedBridgeCallback(payload) && verifyBridgeToken(deps, payload, scope, cmd) !== null) {
       return;
     }
     log.info('cardAction', 'cmd', { cmd, scope });
@@ -127,12 +138,33 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
     return;
   }
 
-  // Agent-driven callback: the button was rendered by an agent via lark-cli,
-  // with `__bridge_cb` set on the value. Forward the click back into the
-  // scope's pending queue so the agent resumes its session and sees the click
-  // as a follow-up message, with full context of what it sent.
+  // Agent-driven callback: the button was rendered by the bridge from a card
+  // the agent authored, with `__bridge_cb` on the value. Forward the click back
+  // into the scope's pending queue so the agent resumes its session and sees
+  // the click as a follow-up message, with full context of what it sent.
+  //
+  // Agent card callback. The bridge SIGNS these when it renders them (operator
+  // binding from `restrict`, single-use nonce, and a 24h expiry all live in the
+  // signed token — see askCard). So if a token is present it must verify. The
+  // tokenless path remains only for the degraded case where the bridge has no
+  // signing key (no app secret resolved) — then the bot-authored, unforgeable
+  // value is the trust anchor, same as the unsigned /status buttons.
   if (BRIDGE_CALLBACK_MARKER in payload) {
-    if (!verifyBridgeToken(deps, payload, scope, 'agent_callback')) return;
+    if (typeof payload.bridge_token === 'string') {
+      const reason = verifyBridgeToken(deps, payload, scope, 'agent_callback');
+      if (reason !== null) {
+        if (reason === 'expired') {
+          try {
+            await deps.channel.send(deps.evt.chatId, {
+              text: '⏰ 这张卡片已过期，请重新发送你的需求，我会发一张新的。',
+            });
+          } catch {
+            // best-effort notice
+          }
+        }
+        return;
+      }
+    }
     forwardToAgent(deps, payload, formValue, scope, threadId, mode);
     return;
   }
@@ -188,13 +220,23 @@ function forwardToAgent(
   threadId: string | undefined,
   mode: 'p2p' | 'group' | 'topic',
 ): void {
-  // Strip the marker so the agent only sees the meaningful fields it set.
+  // Strip markers + internal control fields so the agent only sees the
+  // meaningful fields it set on the button.
   const {
     [BRIDGE_CALLBACK_MARKER]: _marker,
     bridge_token: _token,
+    __ask,
     ...agentPayload
   } = payload;
-  const merged = formValue ? { ...agentPayload, form_value: formValue } : agentPayload;
+  // A `questions` form submit carries an `__ask` map — resolve the raw
+  // form_value into clean `{question: answer}` so the agent gets readable
+  // answers instead of cryptic field names. Otherwise forward the button's
+  // own fields (+ any form_value) as before.
+  const merged = Array.isArray(__ask)
+    ? { answers: resolveAskAnswers(__ask as AskMapEntry[], formValue) }
+    : formValue
+      ? { ...agentPayload, form_value: formValue }
+      : agentPayload;
   log.info('cardAction', 'forward-agent', {
     scope,
     payload: JSON.stringify(merged).slice(0, 200),
@@ -217,40 +259,48 @@ function forwardToAgent(
   deps.pending.push(scope, synthetic);
 }
 
+/**
+ * Verify a signed bridge callback. Returns `null` when authorized, else a short
+ * deny reason (e.g. 'expired', 'nonce-replay', 'context-mismatch') so the caller
+ * can react — notably to tell the user a card expired.
+ *
+ * Agent callbacks (`action === 'agent_callback'`) are answered AFTER the turn
+ * that sent the card has ended, so there is no active run and no per-scope
+ * policy fingerprint: the bridge signs them run-independently (runId:'' /
+ * policyFingerprint:''), and we verify the same way. Operator binding, single-
+ * use nonce and expiry all still come from the token. Built-in command
+ * callbacks (stop, etc.) keep their strict active-run binding.
+ */
 function verifyBridgeToken(
   deps: CardDispatchDeps,
   payload: Record<string, unknown>,
   scope: string,
   action: string,
-): boolean {
+): string | null {
+  const isAgentCallback = action === 'agent_callback';
   const token = typeof payload.bridge_token === 'string' ? payload.bridge_token : '';
   const active = deps.activeRuns.get(scope);
-  if (!deps.callbackAuth || !token || !active) {
-    log.info('cardAction', 'skip-callback-auth-missing', { scope, action });
+  if (!deps.callbackAuth || !token || (!active && !isAgentCallback)) {
     log.warn('callback', 'denied', { scope, action, reason: 'missing-token-or-run' });
-    return false;
+    return 'missing';
   }
   const result = deps.callbackAuth.verify(token, {
-    runId: active.run.runId,
+    runId: isAgentCallback ? '' : (active?.run.runId ?? ''),
     scope,
     chatId: deps.evt.chatId,
     operatorOpenId: deps.evt.operator.openId,
     action,
-    policyFingerprint:
-      deps.callbackPolicyFingerprintForScope?.(scope) ??
-      deps.callbackPolicyFingerprint ??
-      '',
+    policyFingerprint: isAgentCallback
+      ? ''
+      : (deps.callbackPolicyFingerprintForScope?.(scope) ??
+        deps.callbackPolicyFingerprint ??
+        ''),
   });
   if (!result.ok) {
-    log.info('cardAction', 'skip-callback-auth-failed', {
-      scope,
-      action,
-      reason: result.reason,
-    });
     log.warn('callback', 'denied', { scope, action, reason: result.reason });
-    return false;
+    return result.reason;
   }
-  return true;
+  return null;
 }
 
 function isSignedBridgeCallback(payload: Record<string, unknown>): boolean {

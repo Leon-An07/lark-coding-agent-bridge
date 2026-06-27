@@ -1,3 +1,5 @@
+import { askFieldName, type AskCardSpec, type AskMapEntry } from './agent-card';
+
 interface ButtonSpec {
   text: string;
   value: Record<string, unknown>;
@@ -28,6 +30,189 @@ function shell(title: string, elements: object[]): object {
     config: { wide_screen_mode: true, update_multi: true },
     header: { title: { tag: 'plain_text', content: title } },
     elements,
+  };
+}
+
+const V2_CONFIG = { wide_screen_mode: true, update_multi: true };
+
+/**
+ * Signs an agent callback for a specific clicker ('*' = anyone). Provided by the
+ * bridge, which holds the app secret — the agent never sees it. Returns a
+ * bridge_token (HMAC) bound to scope/chat/operator/action + nonce + expiry.
+ */
+export type AgentCardSigner = (operatorOpenId: string) => string;
+
+/** Who may click, per `restrict`: 'me' → the asker, 'anyone' → '*' (wildcard
+ * operator), or a specific open_id. Falls back to '*' if the asker is unknown. */
+function restrictOperator(spec: AskCardSpec, askerOpenId?: string): string {
+  const restrict = spec.restrict ?? 'me';
+  if (restrict === 'anyone') return '*';
+  if (restrict === 'me') return askerOpenId ?? '*';
+  return String(restrict);
+}
+
+/**
+ * A callback button value = the agent's fields + the bridge's signature. The
+ * `bridge_token` is added LAST so the agent's own fields can never override it.
+ * Operator binding, single-use and expiry all live inside the signed token.
+ */
+function callbackValue(
+  fields: Record<string, unknown>,
+  token?: string,
+): Record<string, unknown> {
+  const value: Record<string, unknown> = { __bridge_cb: true, ...fields };
+  if (token) value.bridge_token = token;
+  return value;
+}
+
+/**
+ * Build an interactive "ask" card from an agent-authored spec. The bridge signs
+ * the card (via `sign`) so clicks are cryptographically bound — the agent never
+ * touches the secret.
+ *
+ * ONE token is signed per card and shared by every button, so its single-use
+ * nonce makes the WHOLE card answered-once: the first valid click consumes it,
+ * any later click (even on a different option) is rejected.
+ *
+ * Two shapes:
+ *  - `questions[]` (AskUserQuestion model) → a schema-2.0 `form` with
+ *    select / multi-select / text-input, answered in one submit (form_value).
+ *  - `buttons[]` (quick one-click) → a v1 action card (proven to render).
+ */
+export function askCard(spec: AskCardSpec, askerOpenId?: string, sign?: AgentCardSigner): object {
+  const operator = restrictOperator(spec, askerOpenId);
+  const token = sign?.(operator);
+
+  if (Array.isArray(spec.questions) && spec.questions.length > 0) {
+    return buildQuestionsForm(spec, token);
+  }
+
+  const elements: object[] = [];
+  if (spec.text) elements.push(divMd(String(spec.text)));
+  if (Array.isArray(spec.buttons) && spec.buttons.length > 0) {
+    elements.push(
+      actions(
+        spec.buttons.slice(0, 12).map((b) => ({
+          text: String(b?.text ?? 'OK'),
+          style: b?.style,
+          value: callbackValue(
+            b?.value && typeof b.value === 'object' && !Array.isArray(b.value)
+              ? (b.value as Record<string, unknown>)
+              : { value: b?.value ?? b?.text ?? null },
+            token,
+          ),
+        })),
+      ),
+    );
+  }
+  return shell(spec.header ? String(spec.header) : '请选择', elements);
+}
+
+/**
+ * Build a schema-2.0 form card from the `questions` model — faithful to the
+ * official AskUserQuestion card: a single `form` container holding one
+ * select_static / multi_select_static / input per question, plus a submit
+ * button. select/multi/input need NO value (they cache locally); only the
+ * submit button carries a value (Lark rejects a value-less button: code
+ * 200340). The `__ask` map lets the bridge turn form_value back into clean
+ * `{question: answer}` for the agent.
+ */
+function buildQuestionsForm(spec: AskCardSpec, token?: string): object {
+  const questions = (spec.questions ?? []).slice(0, 10);
+  const formElements: object[] = [];
+  const askMap: AskMapEntry[] = [];
+
+  questions.forEach((q, i) => {
+    if (i > 0) formElements.push({ tag: 'hr' });
+    const header = String(q?.header ?? q?.question ?? `问题 ${i + 1}`);
+    formElements.push({ tag: 'markdown', content: `**${header}**` });
+    if (q?.question && q.question !== header) {
+      formElements.push({ tag: 'markdown', content: String(q.question), text_size: 'notation' });
+    }
+    const field = askFieldName(i);
+    const qText = String(q?.question ?? header);
+    const opts = Array.isArray(q?.options) ? q.options : [];
+    const multi = Boolean(q?.multiSelect);
+    const type = q?.type ?? (opts.length > 0 ? 'select' : 'input');
+
+    if (type === 'date') {
+      formElements.push({
+        tag: 'date_picker',
+        name: field,
+        placeholder: { tag: 'plain_text', content: '选择日期…' },
+      });
+      askMap.push({ f: field, q: qText, k: 'date' });
+    } else if (type === 'person') {
+      formElements.push({
+        tag: multi ? 'multi_select_person' : 'select_person',
+        name: field,
+        placeholder: { tag: 'plain_text', content: multi ? '选择人员（可多选）…' : '选择人员…' },
+      });
+      askMap.push({ f: field, q: qText, k: multi ? 'persons' : 'person' });
+    } else if (type === 'input' || opts.length === 0) {
+      formElements.push({
+        tag: 'input',
+        name: field,
+        placeholder: { tag: 'plain_text', content: '请输入…' },
+      });
+      askMap.push({ f: field, q: qText, k: 'input' });
+    } else if (multi && q?.selectStyle === 'checkbox') {
+      // Checkbox style: one `checker` per option (all visible at once). Each
+      // checker needs a `value` to pass Lark's client validation (code 200340).
+      const optEntries = opts.map((o, j) => ({ f: `${field}_o${j}`, label: String(o.label) }));
+      optEntries.forEach((oe) => {
+        formElements.push({
+          tag: 'checker',
+          name: oe.f,
+          checked: false,
+          text: { tag: 'plain_text', content: oe.label },
+          value: { option: oe.label },
+        });
+      });
+      askMap.push({ f: field, q: qText, k: 'checker', opts: optEntries });
+    } else {
+      formElements.push({
+        tag: multi ? 'multi_select_static' : 'select_static',
+        name: field,
+        placeholder: { tag: 'plain_text', content: multi ? '请选择（可多选）…' : '请选择…' },
+        options: opts.map((o) => ({
+          text: { tag: 'plain_text', content: String(o.label) },
+          value: String(o.label),
+        })),
+      });
+      askMap.push({ f: field, q: qText, k: multi ? 'multi' : 'select' });
+    }
+
+    const desc = opts.filter((o) => o.description).map((o) => `• **${o.label}**：${o.description}`);
+    if (desc.length > 0) {
+      formElements.push({ tag: 'markdown', content: desc.join('\n'), text_size: 'notation' });
+    }
+  });
+
+  formElements.push({ tag: 'hr' });
+  const submitValue = callbackValue({ __ask: askMap }, token);
+  formElements.push({
+    tag: 'button',
+    name: 'ask_submit',
+    text: { tag: 'plain_text', content: '📮 提交' },
+    type: 'primary',
+    form_action_type: 'submit',
+    // schema-2.0 buttons fire a server callback via `behaviors`, NOT via a bare
+    // `value` (that's the v1 way). Without this the submit collects form_value
+    // locally but never sends card.action.trigger to us. Keep `value` too as a
+    // fallback carrier for SDKs that read it.
+    value: submitValue,
+    behaviors: [{ type: 'callback', value: submitValue }],
+  });
+
+  return {
+    schema: '2.0',
+    config: V2_CONFIG,
+    header: {
+      title: { tag: 'plain_text', content: spec.header ? String(spec.header) : '需要你的确认' },
+      template: 'blue',
+    },
+    body: { elements: [{ tag: 'form', name: 'ask_form', elements: formElements }] },
   };
 }
 
