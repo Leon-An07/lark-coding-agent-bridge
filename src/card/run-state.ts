@@ -26,6 +26,15 @@ export interface RunState {
   /** Set when terminal === 'idle_timeout' — how long claude was idle before
    * the watchdog gave up (so the message can say "N 分钟无响应"). */
   idleTimeoutMinutes?: number;
+  /** Wall-clock run duration, stamped when the run reaches a terminal state. */
+  elapsedMs?: number;
+  /** Cumulative token usage + cost from the agent's final `result` line. */
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cachedInputTokens?: number;
+    costUsd?: number;
+  };
 }
 
 export const initialState: RunState = {

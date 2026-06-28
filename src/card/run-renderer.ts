@@ -46,6 +46,11 @@ export function renderCard(state: RunState, options: RunCardRenderOptions = {}):
     elements.push(noteMd('_（未返回内容）_'));
   }
 
+  if (state.terminal !== 'running') {
+    const footer = usageFooter(state);
+    if (footer) elements.push(footer);
+  }
+
   if (state.terminal === 'running') {
     if (state.footer) elements.push(footerStatus(state.footer));
     elements.push(stopButton(options));
@@ -175,6 +180,40 @@ function markdown(content: string): object {
 
 function noteMd(content: string): object {
   return { tag: 'markdown', content, text_size: 'notation' };
+}
+
+/** Completion footer: 用时 + token 消耗 + 费用. Renders only the parts present
+ * (usage is absent on interrupted/errored runs that never hit the result line). */
+function usageFooter(state: RunState): object | null {
+  const parts: string[] = [];
+  if (state.elapsedMs != null) parts.push(`⏱ ${formatDuration(state.elapsedMs)}`);
+  const u = state.usage;
+  if (u && (u.inputTokens != null || u.outputTokens != null)) {
+    const toks: string[] = [];
+    if (u.inputTokens != null) toks.push(`↑${formatTokens(u.inputTokens)}`);
+    if (u.outputTokens != null) toks.push(`↓${formatTokens(u.outputTokens)}`);
+    parts.push(`🔢 ${toks.join(' ')}`);
+  }
+  if (u?.costUsd != null) parts.push(`💰 ${formatCost(u.costUsd)}`);
+  if (parts.length === 0) return null;
+  return noteMd(`_${parts.join('  ·  ')}_`);
+}
+
+function formatDuration(ms: number): string {
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m${Math.round(s % 60)}s`;
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+}
+
+function formatCost(usd: number): string {
+  if (usd === 0) return '$0';
+  return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
 }
 
 function stopButton(options: RunCardRenderOptions): object {

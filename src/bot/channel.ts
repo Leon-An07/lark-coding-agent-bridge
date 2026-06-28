@@ -1249,7 +1249,7 @@ async function processAgentStream(
         continue;
       }
       if (evt.type === 'usage') {
-        const { costUsd, inputTokens, outputTokens } = evt;
+        const { costUsd, inputTokens, outputTokens, cachedInputTokens } = evt;
         if (costUsd !== undefined || inputTokens !== undefined || outputTokens !== undefined) {
           log.info('agent', 'usage', {
             ...(costUsd !== undefined ? { costUsd: Number(costUsd.toFixed(4)) } : {}),
@@ -1260,12 +1260,17 @@ async function processAgentStream(
           if (inputTokens !== undefined) reportMetric('tokens_in', inputTokens);
           if (outputTokens !== undefined) reportMetric('tokens_out', outputTokens);
         }
+        // Stash for the completion footer (card mode renders 用时 + token + 费用).
+        state = { ...state, usage: { inputTokens, outputTokens, cachedInputTokens, costUsd } };
         continue;
       }
 
       const prevTerminal = state.terminal;
       const prevFooter = state.footer;
       state = reduce(state, evt);
+      if (state.terminal !== 'running' && state.elapsedMs === undefined) {
+        state = { ...state, elapsedMs: Date.now() - runStart };
+      }
       if (state.footer !== prevFooter || state.terminal !== prevTerminal) {
         log.info('card', 'transition', { footer: state.footer, terminal: state.terminal });
       }

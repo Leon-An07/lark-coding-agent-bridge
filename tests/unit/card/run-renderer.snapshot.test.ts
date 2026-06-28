@@ -16,6 +16,29 @@ describe('run card renderer snapshots', () => {
     expectCard(initialState).toMatchSnapshot();
   });
 
+  it('renders a 用时 / token / 费用 footer on completion', () => {
+    const state: RunState = {
+      ...initialState,
+      blocks: [{ kind: 'text', content: 'done', streaming: false }],
+      footer: null,
+      terminal: 'done',
+      elapsedMs: 12340,
+      usage: { inputTokens: 1234, outputTokens: 850, costUsd: 0.0321 },
+    };
+    const json = JSON.stringify(renderCard(state));
+    expect(json).toContain('⏱ 12.3s');
+    expect(json).toContain('↑1.2k');
+    expect(json).toContain('↓850');
+    expect(json).toContain('💰 $0.03');
+  });
+
+  it('omits the footer when there is no usage/elapsed (interrupted)', () => {
+    const state: RunState = { ...initialState, terminal: 'interrupted', footer: null };
+    const json = JSON.stringify(renderCard(state));
+    expect(json).not.toContain('⏱');
+    expect(json).not.toContain('💰');
+  });
+
   it('renders active and completed thinking', () => {
     expectCard(stateFrom([{ type: 'thinking', delta: 'checking options' }])).toMatchSnapshot();
     expectCard(stateFrom([
