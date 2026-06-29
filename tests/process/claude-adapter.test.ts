@@ -54,7 +54,7 @@ describe('ClaudeAdapter process contract', () => {
       '--append-system-prompt',
     ]);
     expect(record.argv[8]).toContain('lark-channel-bridge 运行约定');
-    expect(record.argv[8]).toContain('lark-card');
+    expect(record.argv[8]).toContain('send-card');
     expect(record.argv[8]).toContain('LARK_CHANNEL_PROFILE');
     expect(record.argv[8]).toContain('LARKSUITE_CLI_CONFIG_DIR');
     expect(record.argv[8]).not.toContain('lark-cli config bind --source lark-channel');

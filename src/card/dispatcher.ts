@@ -145,10 +145,9 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
   //
   // Agent card callback. The bridge SIGNS these when it renders them (operator
   // binding from `restrict`, single-use nonce, and an expiry all live in the
-  // signed token — see askCard). So if a token is present it must verify. The
-  // tokenless path remains only for the degraded case where the bridge has no
-  // signing key (no app secret resolved) — then the bot-authored, unforgeable
-  // value is the trust anchor, same as the unsigned /status buttons.
+  // signed token injected by `send-card`. So if a token is present it must
+  // verify. The tokenless path remains only for legacy bot-authored values
+  // and unsigned built-in command cards.
   if (BRIDGE_CALLBACK_MARKER in payload) {
     if (typeof payload.bridge_token === 'string') {
       const reason = verifyBridgeToken(deps, payload, scope, 'agent_callback');

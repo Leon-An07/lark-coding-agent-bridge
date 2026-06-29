@@ -9,6 +9,7 @@ import {
   runSecretsRemove,
   runSecretsSet,
 } from './commands/secrets';
+import { runSendCard } from './commands/send-card';
 import {
   runProfileCreate,
   runProfileExport,
@@ -146,6 +147,28 @@ program
   .description('Kill a running bridge process by short id or list index (SIGTERM, then SIGKILL after 2s). Was `stop <target>` in older versions.')
   .action(async (target: string) => {
     await runKillCli(target);
+  });
+
+program
+  .command('send-card')
+  .description('Sign and send a callback-capable Card JSON file with the bridge bot app')
+  .requiredOption('--chat-id <id>', 'target chat ID (oc_xxx); for DMs pass the p2p oc_xxx, not ou_xxx')
+  .requiredOption('--file <path>', 'Card JSON file to sign and send')
+  .option('--operator <open_id>', 'who may click; use * for anyone (default)', '*')
+  .option('--ttl-minutes <minutes>', 'callback token TTL in minutes (default 60)')
+  .option('--dry-run', 'print signed card JSON without sending')
+  .option('-c, --config <path>', 'path to config file')
+  .option('--profile <name>', 'profile name (defaults to active profile)')
+  .action(async (opts: {
+    chatId: string;
+    file: string;
+    operator?: string;
+    ttlMinutes?: string;
+    dryRun?: boolean;
+    config?: string;
+    profile?: string;
+  }) => {
+    await runSendCard(opts);
   });
 
 // === service-level commands (OS-managed daemon: launchd/systemd/schtasks) ===

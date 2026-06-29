@@ -61,48 +61,94 @@ export const BRIDGE_SYSTEM_PROMPT = `# lark-channel-bridge 运行约定
 
 ## 发交互卡片（让用户点选 / 填写，类似 ask-user-question）
 
-需要让用户选 / 填时，**在回复正文里输出一个 \`lark-card\` 代码块**（一小段 JSON）。bridge 会拦下它、生成真正的飞书卡片发出，**代码块本身不显示给用户**。**绝不要用 \`lark-cli\` 发卡或发你自己的回复**——那样 bridge 看不到、回调接不上；你的普通文字回复直接输出即可，bridge 会替你发。
+需要让用户选 / 填时，优先用 \`lark-channel-bridge send-card\` 发送完整 schema 2.0 卡片。这样本地 agent、定时任务、当前飞书对话回复都走同一套 bridge token 回调机制。
 
-两种写法，按需求挑：
+做法：
 
-**A. 快速单选**（一个问题 + 多个按钮，点一下立即回调）——最常用：
-\`\`\`\`
-\`\`\`lark-card
-{ "header": "选择方案", "text": "用哪个？",
-  "buttons": [
-    { "text": "方案 A", "value": { "choice": "a" }, "style": "primary" },
-    { "text": "方案 B", "value": { "choice": "b" } }
-  ] }
+1. 生成完整 schema 2.0 Card JSON 文件。
+2. 需要回调进入 agent 的按钮 / 表单提交按钮，在 callback \`value\` 里放 \`"__bridge_cb": true\` 和业务字段。
+3. 调用 \`lark-channel-bridge send-card --chat-id <oc_xxx> --operator <ou_xxx|*> --file card.json\`。当前对话里 \`<oc_xxx>\` 用 \`bridge_context.chatId\`，默认 operator 用 \`bridge_context.senderId\`；群投票/任意人可点时才用 \`*\`。
+4. 用户点击后你会收到 \`[card-click] {...}\`，里面是按钮 value 中的业务字段。
+
+不要输出旧的 \`\`\`lark-card\`\`\` fenced block。bridge 不再解析 agent 输出里的 \`lark-card\`，所有需要回调进入 agent 的交互卡片都走 \`send-card\`。
+
+**A. 快速单选（推荐：send-card）**
+
+卡片按钮 payload 示例：
+
+\`\`\`json
+{
+  "__bridge_cb": true,
+  "action": "choose_plan",
+  "choice": "a",
+  "instruction": "用户选择了方案 A，请继续按此方案执行。"
+}
 \`\`\`
-\`\`\`\`
-每个按钮 \`value\` 放点击后想拿回的字段。点击后你收到 \`[card-click] {"choice":"a"}\`。
 
-**B. 表单**（下拉单选 / 多选、文本输入、可多个问题，填完一起提交）——对应 ask-user-question：
-\`\`\`\`
-\`\`\`lark-card
-{ "questions": [
-    { "header": "数据库", "question": "用哪个数据库？",
-      "options": [ {"label":"Postgres","description":"关系型"}, {"label":"MongoDB","description":"文档型"} ] },
-    { "header": "缓存", "question": "需要哪些缓存层？（可多选）", "multiSelect": true,
-      "options": [ {"label":"Redis"}, {"label":"本地内存"} ] },
-    { "header": "备注", "question": "其它要求？" }
-] }
+发送命令：
+
+\`\`\`bash
+lark-channel-bridge send-card --chat-id <oc_xxx> --operator <ou_xxx|*> --file card.json
 \`\`\`
-\`\`\`\`
-- 每个 question 用 \`type\` 选组件（不写则:有 \`options\` 当下拉单选,没有当文本输入）:
-  - \`"type":"select"\`(默认,带 options):下拉单选;加 \`"multiSelect":true\` 变下拉多选;再加 \`"selectStyle":"checkbox"\` 变复选框样式(每项一个勾选框,全部可见)。
-  - \`"type":"input"\`:文本输入框(等价于不给 options)。
-  - \`"type":"date"\`:日期选择器。
-  - \`"type":"person"\`:人员选择(\`multiSelect:true\` 可多选),回传的是 open_id。
-- 用户填完点「提交」,你收到 \`[card-click] {"answers": {"问题文本": "选中的label / 日期 / open_id" 或 ["多选..."]}}\`。
 
-**控制字段**（顶层 \`"restrict"\`）：谁能点——缺省 \`"me"\`（只有触发这轮对话的人，群里别人点无效）；\`"anyone"\`（谁都能点，比如群投票，第一个点的人完成）；某人的 \`ou_...\` open_id（只限那个人，open_id 从 \`bridge_context.mentions\` 取）。**每张卡都是一次性的**（被有效点击一次后即失效），不用你设置。
+**B. 表单（推荐：send-card）**
 
-**提交后自动锁定**：用户点击 / 提交后,bridge 会把这张卡变成绿色「✅ 已完成」(去掉按钮、不能再点),并把用户的选择折叠进「查看提交内容」(点击展开),无需你处理。
+表单的 submit 按钮 callback value 里放 \`__bridge_cb: true\`。如果要让 bridge 把 \`form_value\` 解析成可读 \`answers\`，同时放 \`__ask\`：
+
+\`\`\`json
+{
+  "__bridge_cb": true,
+  "__ask": [
+    {"f": "q0", "q": "优先级", "k": "select"},
+    {"f": "q1", "q": "备注", "k": "input"}
+  ],
+  "source": "ask_form"
+}
+\`\`\`
+
+用户提交后你收到：
+
+\`\`\`text
+[card-click] {"answers":{"优先级":"高","备注":"..."}, "source":"ask_form"}
+\`\`\`
+
+**C. 选择点击人**
+
+\`send-card\` 用 \`--operator <ou_xxx|*>\` 控制谁能点。当前对话里默认用 \`bridge_context.senderId\`；需要群里任何人都能点时才用 \`*\`。
+
+**提交后自动锁定**：用户点击 / 提交后，bridge 会把这张卡变成绿色「✅ 已完成」（去掉按钮、不能再点），并把用户的选择折叠进「查看提交内容」（点击展开），无需你处理。
 
 收到 \`[card-click] {...}\` 时：这是用户的选择 / 填写，当作输入继续处理，**不要把 \`[card-click]\` 前缀回显给用户**。卡片有效期约 24 小时，过期后用户再点，bridge 会提示重发。
 
-**C. 纯导航卡片**（通知 + 打开链接，不需要回调、不需要锁定）——用 \`lark-cli im +messages-send\` 发 schema 2.0 卡，按钮用 \`open_url\` 行为：
+**D. 通用 callback 卡片模板**
+
+\`\`\`json
+{
+  "schema": "2.0",
+  "header": {"title": {"tag": "plain_text", "content": "请选择"}, "template": "blue"},
+  "body": {"elements": [
+    {"tag": "markdown", "content": "请选择一个操作："},
+    {"tag": "button", "text": {"tag": "plain_text", "content": "同意"},
+     "type": "primary",
+     "behaviors": [{"type": "callback", "value": {
+       "__bridge_cb": true,
+       "choice": "approve",
+       "ticket_id": "T-123"
+     }}]}
+  ]}
+}
+\`\`\`
+
+然后运行：
+
+\`\`\`bash
+lark-channel-bridge send-card --chat-id <oc_xxx> --operator <ou_xxx|*> --file card.json
+\`\`\`
+
+- \`--chat-id\` 是卡片所在聊天窗口的 \`oc_xxx\`；DM 也要传 p2p 的 \`oc_xxx\`，不是 \`ou_xxx\`。
+- \`--operator <ou_xxx>\` 限定只能此人点击；\`--operator '*'\` 表示第一个有效点击者。
+
+**E. 纯导航卡片**（通知 + 打开链接，不需要回调、不需要锁定）——用 \`lark-cli im +messages-send\` 发 schema 2.0 卡，按钮用 \`open_url\` 行为：
 
 \`\`\`bash
 lark-cli im +messages-send --chat-id <chat_id> --msg-type interactive --as bot --content '{
@@ -117,7 +163,7 @@ lark-cli im +messages-send --chat-id <chat_id> --msg-type interactive --as bot -
 }'
 \`\`\`
 
-选型原则：需要用户选 / 填 → 用 \`lark-card\` shorthand（A/B）；纯通知 + 跳转 → 用 \`lark-cli +messages-send\` + \`open_url\`，不触发 card-click、不锁卡。
+选型原则：只要需要用户点击/填写后回调进入 agent，必须用 \`lark-channel-bridge send-card\`；纯通知 + 跳转 → 用 \`lark-cli +messages-send\` + \`open_url\`，不触发 card-click、不锁卡。
 
 ## lark-cli 运行环境
 

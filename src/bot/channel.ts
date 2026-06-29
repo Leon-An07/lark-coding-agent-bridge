@@ -26,16 +26,6 @@ import {
   type RunState,
 } from '../card/run-state';
 import { renderText } from '../card/text-renderer';
-import { askCard, disabledCard } from '../card/templates';
-import { extractAgentCardSpecs, isInteractiveSpec, stripAgentCardBlocks } from '../card/agent-card';
-import {
-  CARDKIT_SETTLE_MS,
-  registerManagedCard,
-  sendManagedCard,
-  setScopeOpenCard,
-  takeScopeOpenCard,
-  updateManagedCard,
-} from '../card/managed';
 import { tryHandleCommand, type Controls } from '../commands';
 import type { AppConfig } from '../config/schema';
 import {
@@ -82,12 +72,6 @@ import { fetchKnownChats } from './lark-info';
 import type { AppPaths } from '../config/app-paths';
 
 const DEBOUNCE_MS = 600;
-/** How long an agent interactive card stays clickable (signed token TTL).
- * Just a backstop: the common cases die immediately (click → ✅ locked, text
- * reply → greyed). This only bounds a card nobody ever touched — long enough to
- * step away and come back, short enough that a day-old click can't land in a
- * stale session. On expiry the dispatcher greys it + asks them to re-trigger. */
-const AGENT_CARD_TTL_MS = 60 * 60 * 1000; // 1h
 const STREAM_TERMINAL_GRACE_MS = 3000;
 const REACTION_CLEANUP_GRACE_MS = 1000;
 
@@ -661,22 +645,6 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const chatId = firstMsg.chatId;
   const threadId = firstMsg.threadId;
 
-  // The user replied with text instead of clicking — if the previous turn left
-  // an interactive card open, auto-close it (grey out its buttons) so it can't
-  // also be clicked. A card click comes in as 'card_action' and is handled by
-  // the dispatcher's lock instead, so skip those. Best-effort + detached.
-  if (firstMsg.rawContentType !== 'card_action') {
-    const open = takeScopeOpenCard(scope);
-    if (open) {
-      void updateManagedCard(channel, open.messageId, disabledCard(open.card)).catch((err) =>
-        log.warn('agent-card', 'auto-close-failed', {
-          scope,
-          err: err instanceof Error ? err.message : String(err),
-        }),
-      );
-    }
-  }
-
   const resourceItems = batch.flatMap((m) =>
     m.resources.map((r) => ({ messageId: m.messageId, resource: r })),
   );
@@ -820,12 +788,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
 
   // Re-read prefs on every flush so toggling /config mid-stream takes
   // effect immediately. Cheap object lookups, no allocation when on.
-  // Strips ```lark-card``` blocks from text so the raw card JSON the agent
-  // emits never renders — the real card is sent separately after the run.
   const filterForPrefs = (state: RunState): RunState => {
     const blocks = state.blocks
-      .filter((b) => getShowToolCalls(controls.cfg) || b.kind !== 'tool')
-      .map((b) => (b.kind === 'text' ? { ...b, content: stripAgentCardBlocks(b.content) } : b));
+      .filter((b) => getShowToolCalls(controls.cfg) || b.kind !== 'tool');
     return { ...state, blocks };
   };
   const cardRenderOptions = callbackAuth
@@ -875,54 +840,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       ? undefined
       : addWorkingReaction(channel, lastMsg.messageId);
 
-  // Captured across whichever reply mode runs, so we can extract any
-  // ```lark-card``` blocks the agent authored and send them as real cards.
-  let finalRunState: RunState = initialState;
-
-  const replyTextOf = (s: RunState): string =>
-    s.blocks.map((b) => (b.kind === 'text' ? b.content : '')).join('');
-  // The bridge signs each agent callback here (the agent never holds the secret):
-  // the token binds scope/chat/operator/action + a single-use nonce + an
-  // expiry (AGENT_CARD_TTL_MS), signed run-independently (runId:'') so a click
-  // works after the turn.
-  const signAgentCard = callbackAuth
-    ? (operatorOpenId: string): string =>
-        callbackAuth.sign({
-          runId: '',
-          scope,
-          chatId,
-          operatorOpenId,
-          action: 'agent_callback',
-          policyFingerprint: '',
-          ttlMs: AGENT_CARD_TTL_MS,
-        })
-    : undefined;
-  // When the WHOLE reply is a single interactive card, we morph the streamed
-  // reply bubble into that card (no empty "(no content)" bubble, no separate
-  // message). Returns the built card, or null when the reply has prose / 0 / 2+
-  // cards (then we keep the normal reply + send cards separately).
-  const soleReplyCard = (s: RunState): object | null => {
-    const specs = extractAgentCardSpecs(replyTextOf(s)).filter(isInteractiveSpec);
-    const only = specs.length === 1 ? specs[0] : undefined;
-    if (only && stripAgentCardBlocks(replyTextOf(s)).trim() === '') {
-      return askCard(only, firstMsg.senderId, signAgentCard);
-    }
-    return null;
-  };
-  let replyIsAgentCard = false;
-  // True when the reply is ONLY interactive card(s) with no prose — the visible
-  // text is empty. In card mode we morph; in markdown/text mode the card can't
-  // replace the bubble, so we show a short lead-in instead of the SDK's
-  // "(no content)" placeholder (the real card is sent separately below).
-  const replyIsCardOnly = (s: RunState): boolean =>
-    extractAgentCardSpecs(replyTextOf(s)).filter(isInteractiveSpec).length >= 1 &&
-    stripAgentCardBlocks(replyTextOf(s)).trim() === '';
   const markdownReply = (s: RunState): string => {
-    const body = renderText(filterForPrefs(s));
-    if (body.trim() || s.terminal !== 'done') return body;
-    // Card-only reply: this bubble morphs into the card after a short settle, so
-    // show a neutral "generating" state during that window (not an instruction).
-    return replyIsCardOnly(s) ? '⏳ 正在生成卡片…' : body;
+    return renderText(filterForPrefs(s));
   };
 
   try {
@@ -939,7 +858,6 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         recordSession,
         async () => {},
       );
-      finalRunState = finalState;
       await cotDone;
       // Visible final answer (one-shot; the COT already gave the live feel).
       // If a failed run produced no answer text, fall back to the full render so
@@ -965,25 +883,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         recordSession,
         async (state) => {
           latestState = state;
-          finalRunState = state;
           if (!cardCtrl) return;
-          // On completion, if the reply is just one interactive card, morph this
-          // bubble into it instead of showing an empty "(no content)" card.
-          if (state.terminal === 'done') {
-            const card = soleReplyCard(state);
-            if (card) {
-              try {
-                await cardCtrl.update(card);
-                replyIsAgentCard = true;
-                return;
-              } catch (err) {
-                log.warn('agent-card', 'morph-failed', {
-                  scope,
-                  err: err instanceof Error ? err.message : String(err),
-                });
-              }
-            }
-          }
           await cardCtrl.update(renderCard(filterForPrefs(state), cardRenderOptions));
         },
       );
@@ -1008,12 +908,6 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         renderDone,
         producerStarted: () => producerStarted,
         fallback: async (state) => {
-          const card = soleReplyCard(state);
-          if (card) {
-            replyIsAgentCard = true;
-            await channel.send(chatId, { card }, sendOpts);
-            return;
-          }
           await channel.send(
             chatId,
             { card: renderCard(filterForPrefs(state), cardRenderOptions) },
@@ -1024,15 +918,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     } else if (replyMode === 'markdown') {
       let latestState: RunState = initialState;
       let producerStarted = false;
-      // `cardId`/`messageId` are runtime fields on the SDK markdown controller —
-      // the streaming reply is itself a Lark card entity, which we morph into the
-      // agent card when the whole reply is a single card.
       let markdownCtrl:
         | {
             setContent(markdown: string): Promise<void>;
-            readonly cardId?: string;
-            readonly messageId?: string;
-            readonly sequence?: number;
           }
         | undefined;
       const renderDone = processAgentStream(
@@ -1043,7 +931,6 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         recordSession,
         async (state) => {
           latestState = state;
-          finalRunState = state;
           if (markdownCtrl) {
             await markdownCtrl.setContent(markdownReply(state));
           }
@@ -1073,46 +960,6 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
           }
         },
       });
-      // When the whole reply is one interactive card, morph the streaming bubble
-      // IN PLACE into it (single bubble, no separate card). The morph runs
-      // DETACHED + DELAYED: the SDK keeps writing to this card entity right after
-      // the text ends (finishStreamingCard + a trailing throttle flush), so an
-      // immediate morph races those and flickers. Waiting out the settle window
-      // makes our update the LAST write, so it sticks. We register the entity so
-      // the click can lock it; on any failure we fall back to a separate card.
-      const morphCard = soleReplyCard(finalRunState);
-      if (morphCard && markdownCtrl?.cardId && markdownCtrl?.messageId) {
-        replyIsAgentCard = true; // don't also send it as a separate card below
-        const cardId = markdownCtrl.cardId;
-        const cardMsgId = markdownCtrl.messageId;
-        const baseSeq = markdownCtrl.sequence ?? 0;
-        void (async () => {
-          await new Promise((r) => setTimeout(r, CARDKIT_SETTLE_MS));
-          // Larger than the SDK's streaming sequences on this card, but well within
-          // cardkit's int range (Date.now() overflows it → 400).
-          const seq = baseSeq + 1000;
-          try {
-            await channel.updateCardById(cardId, morphCard, seq);
-            registerManagedCard(cardMsgId, cardId, seq); // so the click-lock can update it
-            setScopeOpenCard(scope, cardMsgId, morphCard); // so a text reply can auto-close it
-          } catch (err) {
-            log.warn('agent-card', 'morph-failed', {
-              scope,
-              err: err instanceof Error ? err.message : String(err),
-            });
-            // Morph didn't take — reset the "generating" bubble to a lead-in and
-            // send the card as a separate message so the user still gets it.
-            await markdownCtrl?.setContent('请在下方卡片中选择 👇').catch(() => {});
-            const sent = await sendManagedCard(channel, chatId, morphCard, {
-              replyTo: lastMsg.messageId,
-            }).catch((e) => {
-              log.fail('agent-card', e, { scope, step: 'morph-fallback' });
-              return undefined;
-            });
-            if (sent) setScopeOpenCard(scope, sent.messageId, morphCard);
-          }
-        })();
-      }
     } else {
       // text mode: drain the agent stream without sending anything during
       // the run, then post the final rendered text once as a plain markdown
@@ -1125,47 +972,9 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         recordSession,
         async () => {},
       );
-      finalRunState = finalState;
       const body = renderText(filterForPrefs(finalState));
       if (body.trim()) {
         await channel.send(chatId, { markdown: body }, sendOpts);
-      }
-    }
-
-    // Send any interactive cards the agent authored via ```lark-card``` blocks,
-    // after the text reply so they appear below it. Sent as MANAGED card
-    // entities (cardkit) so a click can reliably lock them in place — the same
-    // lifecycle /config uses. Signing happens in `signAgentCard` (defined before
-    // the run) so the agent never holds the secret; the token carries operator
-    // binding + single-use nonce + expiry.
-    for (const spec of replyIsAgentCard ? [] : extractAgentCardSpecs(replyTextOf(finalRunState))) {
-      if (!isInteractiveSpec(spec)) continue;
-      try {
-        const card = askCard(spec, firstMsg.senderId, signAgentCard);
-        const sent = await sendManagedCard(channel, chatId, card, {
-          replyTo: lastMsg.messageId,
-        });
-        setScopeOpenCard(scope, sent.messageId, card); // so a text reply can auto-close it
-        log.info('agent-card', 'sent', {
-          scope,
-          buttons: spec.buttons?.length ?? 0,
-          questions: spec.questions?.length ?? 0,
-          restrict: spec.restrict ?? 'me',
-        });
-      } catch (err) {
-        // Don't fail silently — Lark rejects unsupported element types (e.g.
-        // multi_select_static) for the whole card. Tell the user so they can
-        // fall back to a text answer instead of seeing nothing.
-        log.fail('agent-card', err, { scope });
-        try {
-          await channel.send(
-            chatId,
-            { markdown: '⚠️ 交互卡片发送失败（可能用了当前飞书应用不支持的卡片元素）。请直接用文字回复你的选择。' },
-            sendOpts,
-          );
-        } catch {
-          // best-effort notice only
-        }
       }
     }
   } catch (err) {

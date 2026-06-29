@@ -10,6 +10,14 @@ describe('CLI command registration', () => {
     expect(source).toContain('runMigrate');
   });
 
+  it('registers the external callback card command', async () => {
+    const source = await readFile(join(process.cwd(), 'src', 'cli', 'index.ts'), 'utf8');
+
+    expect(source).toMatch(/\.command\(['"]send-card['"]\)/);
+    expect(source).toContain('runSendCard');
+    expect(source).not.toMatch(/\.command\(['"]sign-card['"]\)/);
+  });
+
   it('registers app-secret options for non-interactive app bootstrap commands', async () => {
     const source = await readFile(join(process.cwd(), 'src', 'cli', 'index.ts'), 'utf8');
 
