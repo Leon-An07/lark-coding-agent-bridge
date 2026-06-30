@@ -96,6 +96,27 @@ describe('profile schema', () => {
       allowedChats: [],
       admins: [],
       requireMentionInGroup: true,
+      requireMentionInGroupOverrides: {},
+    });
+  });
+
+  it('normalizes per-chat mention overrides and drops invalid values', () => {
+    const cfg = normalizeProfileConfig({
+      schemaVersion: 2,
+      agentKind: 'claude',
+      accounts: { app },
+      access: {
+        requireMentionInGroupOverrides: {
+          oc_b: false,
+          oc_a: true,
+          oc_invalid: 'no',
+        },
+      },
+    });
+
+    expect(cfg.access.requireMentionInGroupOverrides).toEqual({
+      oc_a: true,
+      oc_b: false,
     });
   });
 

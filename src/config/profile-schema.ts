@@ -22,6 +22,7 @@ export interface ProfileAccess {
   allowedChats: string[];
   admins: string[];
   requireMentionInGroup: boolean;
+  requireMentionInGroupOverrides: Record<string, boolean>;
 }
 
 export interface SandboxConfig {
@@ -254,6 +255,7 @@ function normalizeAccess(
     allowedChats: stringArray(access?.allowedChats),
     admins: stringArray(access?.admins),
     requireMentionInGroup: access?.requireMentionInGroup ?? legacyRequireMentionInGroup ?? true,
+    requireMentionInGroupOverrides: booleanRecord(access?.requireMentionInGroupOverrides),
   };
 }
 
@@ -336,6 +338,14 @@ function isLarkCliUserImportStatus(value: unknown): value is LarkCliUserImportSt
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string');
+}
+
+function booleanRecord(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const entries = Object.entries(value)
+    .filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean')
+    .sort(([a], [b]) => a.localeCompare(b));
+  return Object.fromEntries(entries);
 }
 
 function numberOr(value: unknown, fallback: number): number {

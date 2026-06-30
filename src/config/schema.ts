@@ -84,6 +84,10 @@ export interface AppAccess {
    * (/account, /config, /exit, /reconnect, /doctor, /cd, /ws, /doc,
    * /invite, /remove). */
   admins?: string[];
+  /** Legacy/flat-config default for whether group messages require @bot. */
+  requireMentionInGroup?: boolean;
+  /** chat_id-specific overrides for requireMentionInGroup. */
+  requireMentionInGroupOverrides?: Record<string, boolean>;
 }
 
 export interface AppPreferences {
@@ -232,15 +236,28 @@ export function getMaxConcurrentRuns(cfg: AppConfig): number {
  * `!== false` check makes "undefined" (older configs that don't have the
  * field) inherit the new safer default automatically.
  */
-export function getRequireMentionInGroup(cfg: AppConfig): boolean {
+export function getRequireMentionInGroup(cfg: AppConfig, chatId?: string): boolean {
+  const profileAccess = (cfg as AppConfig & {
+    access?: {
+      requireMentionInGroup?: boolean;
+      requireMentionInGroupOverrides?: Record<string, boolean>;
+    };
+  }).access;
+  const legacyAccess = cfg.preferences?.access;
+  if (chatId) {
+    const override =
+      profileAccess?.requireMentionInGroupOverrides?.[chatId] ??
+      legacyAccess?.requireMentionInGroupOverrides?.[chatId];
+    if (typeof override === 'boolean') return override;
+  }
   if (cfg.preferences?.requireMentionInGroup !== undefined) {
     return cfg.preferences.requireMentionInGroup !== false;
   }
-  const profileAccess = (cfg as AppConfig & {
-    access?: { requireMentionInGroup?: boolean };
-  }).access;
   if (profileAccess?.requireMentionInGroup !== undefined) {
     return profileAccess.requireMentionInGroup;
+  }
+  if (legacyAccess?.requireMentionInGroup !== undefined) {
+    return legacyAccess.requireMentionInGroup;
   }
   return true;
 }

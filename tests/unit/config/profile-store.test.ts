@@ -53,6 +53,9 @@ describe('profile store canonical serialization', () => {
           allowedChats: ['oc_chat'],
           admins: ['ou_admin'],
           requireMentionInGroup: false,
+          requireMentionInGroupOverrides: {
+            oc_chat: true,
+          },
         },
         codex: {
           binaryPath: '/usr/local/bin/codex',

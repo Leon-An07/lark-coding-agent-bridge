@@ -224,6 +224,47 @@ describe('sender identity in bridge_context', () => {
     expect(userInput.text).not.toContain('[User (user)]:');
     expect(userInput.text).toContain('看下这个');
   });
+
+  it('does not wake the agent for group messages explicitly mentioning someone else', async () => {
+    const h = await createHarness();
+    h.profileConfig.access.requireMentionInGroup = false;
+    h.controls.cfg = h.profileConfig;
+    await startTestBridge(h);
+
+    await h.channel.handlers.message?.(
+      message({
+        messageId: 'om_other_mention',
+        content: '@HermesBot 帮我处理一下',
+        mentions: [{ key: '@_user_2', openId: 'ou_hermes', name: 'HermesBot', isBot: true }],
+        mentionedBot: false,
+      }),
+    );
+    await waitForQuiet();
+
+    expect(h.agent.runOptions).toHaveLength(0);
+  });
+
+  it('still wakes the agent for undirected group messages in no-mention mode', async () => {
+    const h = await createHarness();
+    h.profileConfig.access.requireMentionInGroup = false;
+    h.controls.cfg = h.profileConfig;
+    await startTestBridge(h);
+
+    await h.channel.handlers.message?.(
+      message({
+        messageId: 'om_undirected',
+        content: '帮我看一下这个状态',
+        mentions: [],
+        mentionedBot: false,
+      }),
+    );
+    await waitFor(() => h.agent.runOptions.length === 1);
+
+    const userInput = readSection(h.agent.runOptions[0]?.prompt ?? '', 'user_input') as {
+      text: string;
+    };
+    expect(userInput.text).toContain('帮我看一下这个状态');
+  });
 });
 
 async function createHarness(): Promise<{
@@ -367,6 +408,7 @@ function message(input: {
   senderName?: string;
   rawSenderType?: string;
   mentions?: Array<{ key: string; openId?: string; name?: string; isBot?: boolean }>;
+  mentionedBot?: boolean;
 }): NormalizedMessage {
   return {
     messageId: input.messageId,
@@ -381,7 +423,7 @@ function message(input: {
       { key: '@_user_1', openId: 'ou_bot', name: 'Bridge', isBot: true },
     ],
     mentionAll: false,
-    mentionedBot: true,
+    mentionedBot: input.mentionedBot ?? true,
     createTime: 1760000001000,
     ...(input.rawSenderType
       ? {
@@ -410,6 +452,10 @@ async function waitFor(predicate: () => boolean, timeoutMs = 3000): Promise<void
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error('timed out waiting for async work');
+}
+
+async function waitForQuiet(ms = 800): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 interface MarkdownStreamInput {

@@ -10,6 +10,7 @@ export interface ConfigFormOpts {
   /** 0 means "disabled". */
   runIdleTimeoutMinutes: number;
   requireMentionInGroup: boolean;
+  requireMentionInGroupOverrides: Record<string, boolean>;
   larkCliIdentity: LarkCliIdentityPreset;
   allowedUsers: string[];
   allowedChats: string[];
@@ -52,6 +53,17 @@ function chatList(chatIds: string[], knownChats: KnownChat[]): string {
     .join('\n');
 }
 
+function mentionOverrideList(overrides: Record<string, boolean>, knownChats: KnownChat[]): string {
+  const entries = Object.entries(overrides).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return '_（暂无，全部跟随全局设置）_';
+  const nameMap = new Map(knownChats.map((chat) => [chat.id, chat.name]));
+  return entries
+    .map(([id, required]) =>
+      `- **${nameMap.get(id) ?? '(未知群)'}**（...${id.slice(-6)}）：${required ? '需要 @bot' : '不需要 @bot'}`,
+    )
+    .join('\n');
+}
+
 /** Form card for `/config`. */
 export function configFormCard(opts: ConfigFormOpts): object {
   const accessElements: object[] = [
@@ -75,6 +87,14 @@ export function configFormCard(opts: ConfigFormOpts): object {
         `${chatList(opts.allowedChats, opts.knownChats)}\n\n` +
         '_一键加全部 bot 所在的群：_ `/invite all group`\n' +
         '_加 / 删（在目标群里发）：_ `/invite group`  `/remove group`',
+    },
+    { tag: 'hr' },
+    {
+      tag: 'markdown',
+      content:
+        `**单群 @ 例外**（共 ${Object.keys(opts.requireMentionInGroupOverrides).length} 个）\n` +
+        '_在目标群里发 `/mention group on|off|default` 只影响那个群；`off` 表示把当前群设为专属群免 @，`default` 会删除该群例外,重新跟随全局默认值。_\n' +
+        `${mentionOverrideList(opts.requireMentionInGroupOverrides, opts.knownChats)}`,
     },
     { tag: 'hr' },
     {
@@ -185,19 +205,25 @@ export function configFormCard(opts: ConfigFormOpts): object {
             {
               tag: 'markdown',
               content:
-                '\n**群里需要 @ bot**\n' +
-                '_是(默认):群和话题群里,不 @ bot 的消息不会触发回复,bot 不接群里聊天_\n' +
-                '_否:任何消息都会发给 agent(0.1.21 及更早版本的行为)_\n' +
-                '_私聊永远不需要 @;`@全员` 永远不响应_',
+                '\n**群里是否需要 @bot（全局默认）**\n' +
+                '_推荐保持“需要 @bot”。“专属群免 @”只适合这个群基本只给当前 bot 使用的场景。私聊永远不需要 @;`@全员` 永远不响应。_',
             },
             {
               tag: 'select_static',
               name: 'require_mention_in_group',
+              placeholder: { tag: 'plain_text', content: '选择群聊触发方式' },
               initial_option: opts.requireMentionInGroup ? 'yes' : 'no',
               options: [
-                { text: { tag: 'plain_text', content: '是(默认)' }, value: 'yes' },
-                { text: { tag: 'plain_text', content: '否' }, value: 'no' },
+                { text: { tag: 'plain_text', content: '需要 @bot（默认）' }, value: 'yes' },
+                { text: { tag: 'plain_text', content: '专属群免 @' }, value: 'no' },
               ],
+            },
+            {
+              tag: 'markdown',
+              content:
+                '_需要 @bot:群和话题群里,不 @bot 的消息不会触发回复。_\n' +
+                '_专属群免 @:群里普通消息也会发给 agent；如果同群有多个 bot，容易多 bot 同时响应，不建议开启。需应用具备 `im:message.group_msg` 权限。_\n' +
+                '_单群例外在下方“访问控制”里查看；修改请在目标群里发 `/mention group on|off|default`。_',
             },
             {
               tag: 'markdown',
@@ -279,7 +305,8 @@ export function configSavedCard(opts: ConfigFormOpts): object {
             `**工具调用显示**:\`${opts.showToolCalls ? 'show' : 'hide'}\`\n` +
             `**并发上限**:\`${opts.maxConcurrentRuns}\`\n` +
             `**run 探活**:\`${opts.runIdleTimeoutMinutes > 0 ? `${opts.runIdleTimeoutMinutes} 分钟` : '关闭'}\`\n` +
-            `**群里需要 @ bot**:\`${opts.requireMentionInGroup ? '是' : '否'}\`\n\n` +
+            `**群里需要 @bot（全局默认）**:\`${opts.requireMentionInGroup ? '是' : '专属群免 @'}\`\n` +
+            `**单群 @ 例外**:${summarize(Object.keys(opts.requireMentionInGroupOverrides))}\n\n` +
             `**lark-cli 身份策略**:\`${opts.larkCliIdentity === 'user-default' ? '允许用户身份' : '只允许应用身份'}\`\n\n` +
             '🔒 **访问控制**\n' +
             `**允许私聊的用户**:${summarize(opts.allowedUsers)}\n` +

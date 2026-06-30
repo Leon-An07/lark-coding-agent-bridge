@@ -18,6 +18,23 @@ describe('Claude IM regression boundaries', () => {
     expect(getRequireMentionInGroup(cfg)).toBe(true);
   });
 
+  it('lets a chat-specific mention setting override the global default', () => {
+    const cfg = {
+      accounts: { app: { id: 'app-id', secret: 'secret', tenant: 'feishu' as const } },
+      access: {
+        requireMentionInGroup: true,
+        requireMentionInGroupOverrides: {
+          oc_quiet: false,
+          oc_strict: true,
+        },
+      },
+    };
+
+    expect(getRequireMentionInGroup(cfg, 'oc_quiet')).toBe(false);
+    expect(getRequireMentionInGroup(cfg, 'oc_strict')).toBe(true);
+    expect(getRequireMentionInGroup(cfg, 'oc_default')).toBe(true);
+  });
+
   it('keeps markdown as the default reply mode and card as the explicit stop-button mode', () => {
     const defaultCfg = {
       accounts: { app: { id: 'app-id', secret: 'secret', tenant: 'feishu' as const } },
@@ -57,7 +74,7 @@ describe('Claude IM regression boundaries', () => {
     const source = await readFile(join(process.cwd(), 'src/bot/channel.ts'), 'utf8');
 
     expect(source).toContain('respondToMentionAll: false');
-    expect(source).toContain('getRequireMentionInGroup(controls.cfg)');
+    expect(source).toContain('getRequireMentionInGroup(controls.cfg, msg.chatId)');
     expect(source).toContain('!msg.mentionedBot');
     expect(source).toContain('msg.chatType !== \'p2p\'');
   });

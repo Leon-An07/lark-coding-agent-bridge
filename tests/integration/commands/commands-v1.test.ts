@@ -311,6 +311,51 @@ describe('Bridge command contracts', () => {
     const root = await loadRootConfig(h.controls.configPath);
     expect(root?.profiles.claude?.access.allowedChats).toEqual(['oc-group-1', 'oc-group-2']);
   });
+
+  it('manages per-group mention overrides through /mention group', async () => {
+    const h = await createHarness();
+
+    await expect(
+      h.run('/mention group off', {
+        chatId: 'oc-group-1',
+        scope: 'oc-group-1',
+        chatMode: 'group',
+      }),
+    ).resolves.toBe(true);
+
+    let root = await loadRootConfig(h.controls.configPath);
+    expect(root?.profiles.claude?.access.requireMentionInGroupOverrides).toEqual({
+      'oc-group-1': false,
+    });
+    expect(lastMarkdown(h.channel)).toContain('专属群免 @');
+    expect(lastMarkdown(h.channel)).toContain('不建议开启免 @');
+
+    await expect(
+      h.run('/mention group on', {
+        chatId: 'oc-group-1',
+        scope: 'oc-group-1',
+        chatMode: 'group',
+      }),
+    ).resolves.toBe(true);
+
+    root = await loadRootConfig(h.controls.configPath);
+    expect(root?.profiles.claude?.access.requireMentionInGroupOverrides).toEqual({
+      'oc-group-1': true,
+    });
+    expect(lastMarkdown(h.channel)).toContain('需要 @bot');
+
+    await expect(
+      h.run('/mention group default', {
+        chatId: 'oc-group-1',
+        scope: 'oc-group-1',
+        chatMode: 'group',
+      }),
+    ).resolves.toBe(true);
+
+    root = await loadRootConfig(h.controls.configPath);
+    expect(root?.profiles.claude?.access.requireMentionInGroupOverrides).toEqual({});
+    expect(lastMarkdown(h.channel)).toContain('跟随全局设置');
+  });
 });
 
 async function createHarness(): Promise<Harness> {

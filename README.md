@@ -145,6 +145,9 @@ If a profile was created with the wrong agent kind, stop or unregister any match
 | `/resume` | Resume compatible history for the same agent, working directory, and permission mode |
 | `/status` | Show profile, agent, working directory, session, lark-cli identity, and run state |
 | `/config` | Adjust presentation preferences, access settings, and lark-cli identity policy |
+| `/mention group on` | Require `@bot` in the current group |
+| `/mention group off` | Put the current group in dedicated no-mention mode (ordinary messages trigger; not recommended in multi-bot groups) |
+| `/mention group default` | Make the current group follow the global `/config` mention setting |
 | `/invite user @name` | Allow a user to use the bot in DMs |
 | `/invite admin @name` | Add an access-control admin |
 | `/invite group` | Allow the current group to use the bot |
@@ -158,7 +161,7 @@ If a profile was created with the wrong agent kind, stop or unregister any match
 | `/doctor [description]` | Run low-sensitive diagnostics |
 | `/help` | Help card |
 
-DMs do not require an @ mention. Groups and topic groups require `@bot` by default; `@all` is ignored. Cloud-doc comments in supported document types run when the bot is mentioned.
+DMs do not require an @ mention. Groups and topic groups require `@bot` by default; owners/admins can run `/mention group off` in a target group to put that group in dedicated no-mention mode, `/mention group on` to force mentions on, and `/mention group default` to follow the global `/config` setting again. No-mention mode is meant for groups that are effectively dedicated to this bot; keep mentions required in multi-bot groups, otherwise ordinary messages can wake multiple bots at once. `@all` is ignored. Cloud-doc comments in supported document types run when the bot is mentioned.
 
 ## lark-cli identity policy
 
@@ -273,14 +276,18 @@ If you'd rather not do it inside Feishu, `/invite` and `/config` write the match
         "allowedUsers": ["ou_xxxxxxxxxxxxx"],
         "allowedChats": ["oc_xxxxxxxxxxxxx"],
         "admins": ["ou_xxxxxxxxxxxxx"],
-        "requireMentionInGroup": true
+        "requireMentionInGroup": true,
+        "requireMentionInGroupOverrides": {
+          "oc_group_without_at": false,
+          "oc_group_with_at": true
+        }
       }
     }
   }
 }
 ```
 
-`allowedUsers` / `admins` take user `open_id`s; `allowedChats` takes group `chat_id`s. The easiest way to find an ID by hand: have the person message the bot (or `@` it in the group), then check the active profile's log:
+`allowedUsers` / `admins` take user `open_id`s; `allowedChats` and `requireMentionInGroupOverrides` keys take group `chat_id`s. An override value of `false` means that group is in dedicated no-mention mode; `true` means it requires `@bot`. The easiest way to find an ID by hand: have the person message the bot (or `@` it in the group), then check the active profile's log:
 
 ```bash
 grep '"event":"enter"' ~/.lark-channel/profiles/<profile>/logs/bridge-$(date +%Y%m%d).jsonl | tail -5

@@ -188,6 +188,7 @@ const handlers: Record<string, Handler> = {
   '/doc': handleDoc,
   '/invite': handleInvite,
   '/remove': handleRemove,
+  '/mention': handleMention,
 };
 
 /**
@@ -206,6 +207,7 @@ const ADMIN_COMMANDS = new Set([
   '/ws',
   '/invite',
   '/remove',
+  '/mention',
 ]);
 
 function isAdminCommand(cmd: string): boolean {
@@ -1684,6 +1686,77 @@ function mentionTargets(ctx: CommandContext): Array<{ openId: string; name?: str
     }));
 }
 
+// ────────────── /mention — per-group @ policy ──────────────
+
+async function handleMention(args: string, ctx: CommandContext): Promise<void> {
+  const tokens = args.trim().split(/\s+/).filter(Boolean).map((token) => token.toLowerCase());
+  const wantsGroup = tokens.includes('group') || tokens.length === 0;
+  const rawMode = tokens.find((token) =>
+    /^(on|off|default|yes|no|require|optional|inherit|reset)$/.test(token),
+  );
+  const mode =
+    rawMode === 'yes' || rawMode === 'require'
+      ? 'on'
+      : rawMode === 'no' || rawMode === 'optional'
+        ? 'off'
+        : rawMode === 'inherit' || rawMode === 'reset'
+          ? 'default'
+          : rawMode;
+
+  if (!wantsGroup || (mode !== 'on' && mode !== 'off' && mode !== 'default')) {
+    await reply(
+      ctx,
+      '用法：\n' +
+        '• `/mention group on` — 当前群必须 @bot 才触发\n' +
+        '• `/mention group off` — 当前群设为专属群免 @（普通消息也触发，不建议多 bot 群开启）\n' +
+        '• `/mention group default` — 当前群跟随 `/config` 的全局设置',
+    );
+    return;
+  }
+
+  if (ctx.chatMode === 'p2p') {
+    await reply(ctx, '`/mention group` 请在要设置的群里发，私聊里没有群策略可改。');
+    return;
+  }
+
+  const chatId = ctx.msg.chatId;
+  const globalDefault = ctx.controls.profileConfig.access.requireMentionInGroup;
+  let effective = globalDefault;
+  await saveAccessConfig(ctx, (current) => {
+    const overrides = { ...current.requireMentionInGroupOverrides };
+    if (mode === 'default') {
+      delete overrides[chatId];
+    } else {
+      overrides[chatId] = mode === 'on';
+    }
+    effective = overrides[chatId] ?? current.requireMentionInGroup;
+    return {
+      ...current,
+      requireMentionInGroupOverrides: overrides,
+    };
+  });
+
+  if (mode === 'default') {
+    await reply(
+      ctx,
+      `✅ 当前群已恢复为跟随全局设置（全局默认）：${effective ? '需要 @bot' : '专属群免 @'}。`,
+    );
+    return;
+  }
+
+  const label = effective ? '需要 @bot' : '专属群免 @（普通消息也会触发）';
+  const warning = effective
+    ? ''
+    : '\n\n⚠️ 如果这个群里有多个 bot，不建议开启免 @，否则普通消息可能让多个 bot 同时响应。';
+  await reply(
+    ctx,
+    `✅ 当前群已设置为：${label}。这只影响当前群，不修改 /config 的全局默认值。${warning}`,
+  );
+  if (!effective) {
+    await promptGroupMsgScopeIfMissing(ctx);
+  }
+}
+
 async function saveAccessConfig(
   ctx: CommandContext,
   mutate: (access: ProfileAccess) => ProfileAccess,
@@ -1703,6 +1776,7 @@ async function saveAccessConfig(
             allowedUsers: access.allowedUsers,
             allowedChats: access.allowedChats,
             admins: access.admins,
+            requireMentionInGroupOverrides: access.requireMentionInGroupOverrides,
           },
           requireMentionInGroup: access.requireMentionInGroup,
         };
@@ -1724,6 +1798,7 @@ async function saveAccessConfig(
         allowedUsers: access.allowedUsers.length,
         allowedChats: access.allowedChats.length,
         admins: access.admins.length,
+        mentionOverrides: Object.keys(access.requireMentionInGroupOverrides).length,
       });
       return access;
     });
@@ -1768,6 +1843,7 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
     maxConcurrentRuns: getMaxConcurrentRuns(ctx.controls.cfg),
     runIdleTimeoutMinutes: ms ? Math.round(ms / 60_000) : 0,
     requireMentionInGroup: getRequireMentionInGroup(ctx.controls.cfg),
+    requireMentionInGroupOverrides: access.requireMentionInGroupOverrides,
     larkCliIdentity: ctx.controls.profileConfig.larkCli.identityPreset,
     allowedUsers: access.allowedUsers,
     allowedChats: access.allowedChats,
@@ -1945,6 +2021,7 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
         maxConcurrentRuns,
         runIdleTimeoutMinutes,
         requireMentionInGroup,
+        requireMentionInGroupOverrides: access.requireMentionInGroupOverrides,
         larkCliIdentity,
         allowedUsers: access.allowedUsers,
         allowedChats: access.allowedChats,

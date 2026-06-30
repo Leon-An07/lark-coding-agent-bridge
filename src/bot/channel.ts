@@ -566,7 +566,7 @@ async function intakeMessage(deps: IntakeDeps): Promise<void> {
   // event reaching here is either targeted or undirected chatter.
   if (
     msg.chatType !== 'p2p' &&
-    getRequireMentionInGroup(controls.cfg) &&
+    getRequireMentionInGroup(controls.cfg, msg.chatId) &&
     !msg.mentionedBot
   ) {
     log.info('intake', 'skip-no-mention', { scope, chatType: msg.chatType });
@@ -601,8 +601,35 @@ async function intakeMessage(deps: IntakeDeps): Promise<void> {
     return;
   }
 
+  // In non-mention mode the bot listens to ordinary group chatter, but a
+  // message that explicitly @-targets someone else belongs to that target.
+  // Do not wake the agent unless the current bot was also mentioned.
+  if (isGroupMessageTargetedElsewhere(msg, channel.botIdentity)) {
+    log.info('intake', 'skip-other-mention', {
+      scope,
+      chatType: msg.chatType,
+      mentions: msg.mentions?.length ?? 0,
+    });
+    return;
+  }
+
   const size = pending.push(scope, msg);
   log.info('intake', 'queued', { scope, queueSize: size, debounceMs: DEBOUNCE_MS });
+}
+
+function isGroupMessageTargetedElsewhere(
+  msg: NormalizedMessage,
+  botIdentity?: { openId?: string },
+): boolean {
+  if (msg.chatType === 'p2p' || msg.mentionedBot) return false;
+  const mentions = msg.mentions ?? [];
+  if (mentions.length === 0) return false;
+  const botOpenId = botIdentity?.openId;
+  return mentions.some((mention) => {
+    const openId = typeof mention.openId === 'string' ? mention.openId : undefined;
+    if (botOpenId && openId === botOpenId) return false;
+    return Boolean(openId || mention.key || mention.name);
+  });
 }
 
 interface RunBatchDeps {

@@ -231,6 +231,7 @@ export function helpCard(agentName = 'Agent'): object {
         '- `/ws list|save <name>|use <name>|remove <name>` — 工作目录',
         '- `/account` — 查看当前应用；`/account change` 换 appId/secret 并重连',
         '- `/config` — 调整偏好、访问控制和 lark-cli 身份策略',
+        '- `/mention group on|off|default` — 设置当前群是否需要 @bot；off 是专属群免 @ 模式',
         '- `/status` — 当前状态',
         '- `/stop` — 结束当前正在跑的任务（也可点卡片底部 ⏹ 终止 按钮）',
         '- `/stop comment:<scopeHash>` — 管理员停止云文档评论任务',
