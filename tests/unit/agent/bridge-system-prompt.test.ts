@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BRIDGE_SYSTEM_PROMPT,
   buildBridgeSystemPrompt,
+  prefixBridgeContractPrompt,
   prefixBridgeSystemPrompt,
 } from '../../../src/agent/bridge-system-prompt';
 
@@ -69,5 +70,26 @@ describe('prefixBridgeSystemPrompt', () => {
     const prompt = prefixBridgeSystemPrompt('hello world', undefined);
     expect(prompt.startsWith(BRIDGE_SYSTEM_PROMPT)).toBe(true);
     expect(prompt.endsWith('hello world')).toBe(true);
+  });
+});
+
+describe('prefixBridgeContractPrompt', () => {
+  it('wraps the identity-aware bridge contract into the user prompt for first Claude turns', () => {
+    const prompt = prefixBridgeContractPrompt('hello world', {
+      openId: 'ou_bot_self',
+      name: 'Bridge',
+    });
+
+    expect(prompt.startsWith('<bridge_contract>\n')).toBe(true);
+    expect(prompt).toContain('lark-channel-bridge 运行约定');
+    expect(prompt).toContain('ou_bot_self');
+    expect(prompt).toContain('</bridge_contract>\n\nhello world');
+  });
+
+  it('keeps working without an identity', () => {
+    const prompt = prefixBridgeContractPrompt('hello world', undefined);
+
+    expect(prompt).toContain(BRIDGE_SYSTEM_PROMPT);
+    expect(prompt.endsWith('</bridge_contract>\n\nhello world')).toBe(true);
   });
 });

@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline';
 import type { Readable } from 'node:stream';
 import { log } from '../../core/logger';
 import { mergeProcessEnv, spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
-import { buildBridgeSystemPrompt } from '../bridge-system-prompt';
+import { buildBridgeSystemPrompt, prefixBridgeContractPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
 import { checkAgentAvailability, type AgentAvailability } from '../preflight';
 import {
@@ -57,18 +57,26 @@ export class ClaudeAdapter implements AgentAdapter {
       throw new Error('cwd is required for ClaudeAdapter.run');
     }
 
+    const isResume = Boolean(opts.sessionId);
     const args = [
       '-p',
-      opts.prompt,
+      isResume ? opts.prompt : prefixBridgeContractPrompt(opts.prompt, this.botIdentity),
       '--output-format',
       'stream-json',
       '--verbose',
       '--permission-mode',
       opts.permissionMode ?? CLAUDE_DEFAULT_PERMISSION_MODE,
-      '--append-system-prompt',
-      buildBridgeSystemPrompt(this.botIdentity),
     ];
-    if (opts.sessionId) args.push('--resume', opts.sessionId);
+    if (isResume) {
+      // NOTE: no --bare here — bare/simple mode refuses OAuth/keychain auth
+      // (strictly ANTHROPIC_API_KEY), which breaks subscription setups.
+      // The bridge contract already persists in the session transcript via
+      // prefixBridgeContractPrompt on the first message, so we skip
+      // re-appending the system prompt on every resume.
+      args.push('--resume', opts.sessionId!);
+    } else {
+      args.push('--append-system-prompt', buildBridgeSystemPrompt(this.botIdentity));
+    }
     if (opts.model) args.push('--model', opts.model);
 
     const child = spawnProcess(this.binary, args, {

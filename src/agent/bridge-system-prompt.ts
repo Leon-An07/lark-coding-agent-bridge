@@ -221,3 +221,10 @@ export function prefixBridgeSystemPrompt(
 ): string {
   return `${buildBridgeSystemPrompt(identity)}\n\n## user_message\n\n${prompt}`;
 }
+
+export function prefixBridgeContractPrompt(
+  prompt: string,
+  identity: AgentBotIdentity | undefined,
+): string {
+  return `<bridge_contract>\n${buildBridgeSystemPrompt(identity)}\n</bridge_contract>\n\n${prompt}`;
+}
