@@ -207,7 +207,90 @@ describe('ClaudeAdapter process contract', () => {
       new ClaudeAdapter({ binary: 'unused' }).run({ runId: 'run-no-cwd', prompt: 'hi' }),
     ).toThrow(/cwd is required/);
   });
+
+  it('retries once without --resume when the session id is dead', async () => {
+    const fake = await createResumeAwareFakeClaude();
+    cleanup.push(fake.dir);
+
+    const run = new ClaudeAdapter({ binary: fake.path }).run({
+      runId: 'run-dead-resume',
+      prompt: 'hello again',
+      cwd: fake.dir,
+      sessionId: 'dead-sess',
+    });
+
+    const events = await collect(run.events);
+    // The dead-session error is swallowed; the fresh run's events flow through
+    // transparently (its init event carries the new session id).
+    expect(events.map((e) => e.type)).toEqual(['system', 'text', 'done']);
+    expect((events[0] as { sessionId?: string }).sessionId).toBe('sess-new');
+
+    const calls = (await readFile(fake.recordPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l) as string[]);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toContain('--resume');
+    expect(calls[1]).not.toContain('--resume');
+  });
+
+  it('surfaces a non-session run error without retrying', async () => {
+    const fake = await createFakeClaude({
+      lines: [
+        {
+          type: 'result',
+          subtype: 'error_during_execution',
+          is_error: true,
+          errors: ['boom: something unrelated'],
+        },
+      ],
+    });
+    cleanup.push(fake.dir);
+
+    const run = new ClaudeAdapter({ binary: fake.path }).run({
+      runId: 'run-other-error',
+      prompt: 'hi',
+      cwd: fake.dir,
+      sessionId: 'sess-live',
+    });
+
+    expect(await collect(run.events)).toEqual([
+      {
+        type: 'error',
+        message: 'boom: something unrelated',
+        terminationReason: 'failed',
+      },
+    ]);
+  });
 });
+
+async function createResumeAwareFakeClaude(): Promise<FakeBinary> {
+  const dir = await mkdtemp(join(tmpdir(), 'claude-adapter-resume-'));
+  const path = join(dir, 'fake-claude.mjs');
+  const recordPath = join(dir, 'calls.jsonl');
+  await writeFile(
+    path,
+    [
+      '#!/usr/bin/env node',
+      'import { appendFileSync } from "node:fs";',
+      'const argv = process.argv.slice(2);',
+      `appendFileSync(${JSON.stringify(recordPath)}, JSON.stringify(argv) + "\\n");`,
+      'if (argv.includes("--resume")) {',
+      '  // Mirrors real claude CLI behaviour on a dead session id: exit 0,',
+      '  // error carried on the result event.',
+      '  console.log(JSON.stringify({ type: "result", subtype: "error_during_execution", is_error: true, errors: ["No conversation found with session ID: dead-sess"] }));',
+      '  process.exit(0);',
+      '}',
+      'console.log(JSON.stringify({ type: "system", subtype: "init", session_id: "sess-new", cwd: process.cwd() }));',
+      'console.log(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "hi" }] } }));',
+      'console.log(JSON.stringify({ type: "result", session_id: "sess-new" }));',
+      'process.exit(0);',
+    ].join('\n'),
+    'utf8',
+  );
+  await chmod(path, 0o755);
+  return { path, dir, recordPath };
+}
 
 async function collect(events: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {
   const out: AgentEvent[] = [];

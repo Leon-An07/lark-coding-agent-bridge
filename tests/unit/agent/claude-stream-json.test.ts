@@ -83,6 +83,34 @@ describe('Claude stream-json translator', () => {
     expect([...translateEvent({ type: 'result', session_id: 'sess-2' })][0]).not.toHaveProperty('threadId');
   });
 
+  it('translates an is_error result into an error event, not done/normal', () => {
+    // claude exits 0 even on failed runs (e.g. --resume with a dead session
+    // id); the result event's is_error flag is the only failure signal.
+    expect([
+      ...translateEvent({
+        type: 'result',
+        subtype: 'error_during_execution',
+        session_id: 'sess-dead',
+        is_error: true,
+        errors: ['No conversation found with session ID: sess-dead'],
+        usage: { input_tokens: 0, output_tokens: 0 },
+      }),
+    ]).toEqual([
+      { type: 'usage', inputTokens: 0, outputTokens: 0, cachedInputTokens: undefined, costUsd: undefined },
+      {
+        type: 'error',
+        message: 'No conversation found with session ID: sess-dead',
+        terminationReason: 'failed',
+      },
+    ]);
+    // No errors array → falls back to the subtype.
+    expect([
+      ...translateEvent({ type: 'result', subtype: 'error_max_turns', is_error: true }),
+    ]).toEqual([
+      { type: 'error', message: 'claude run failed (error_max_turns)', terminationReason: 'failed' },
+    ]);
+  });
+
   it('ignores unknown, empty, and incomplete raw events', () => {
     expect([...translateEvent(null)]).toEqual([]);
     expect([...translateEvent({ type: 'assistant', message: { content: [{ type: 'text', text: '' }] } })]).toEqual([]);

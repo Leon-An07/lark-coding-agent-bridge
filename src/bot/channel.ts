@@ -17,6 +17,7 @@ import { handleCardAction } from '../card/dispatcher';
 import { CallbackAuth } from '../card/callback-auth';
 import { CallbackNonceStore } from '../card/callback-store';
 import { renderCard } from '../card/run-renderer';
+import { configureOpenCardStore, takeScopeOpenCard } from '../card/managed';
 import {
   finalizeIfRunning,
   initialState,
@@ -26,6 +27,7 @@ import {
   type RunState,
 } from '../card/run-state';
 import { renderText } from '../card/text-renderer';
+import { disabledCard } from '../card/templates';
 import { tryHandleCommand, type Controls } from '../commands';
 import type { AppConfig } from '../config/schema';
 import {
@@ -73,6 +75,8 @@ import type { AppPaths } from '../config/app-paths';
 
 const DEBOUNCE_MS = 600;
 const STREAM_TERMINAL_GRACE_MS = 3000;
+/** Idle watchdog ceiling while tool calls are in flight (see armOrPauseIdle). */
+const TOOL_BACKSTOP_MS = 30 * 60 * 1000; // 30min
 const REACTION_CLEANUP_GRACE_MS = 1000;
 
 const BRIDGE_AGENT_INSTRUCTIONS = [
@@ -197,6 +201,13 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     ? new CallbackNonceStore(join(dirname(deps.appPaths.mediaDir), 'callback-nonces.json'))
     : undefined;
   await callbackNonceStore?.load();
+  // Shared with the send-card CLI: it records answerable cards here, the
+  // daemon greys them out on a text reply (see runAgentBatch).
+  configureOpenCardStore(
+    deps.appPaths?.mediaDir
+      ? join(dirname(deps.appPaths.mediaDir), 'open-cards.json')
+      : undefined,
+  );
   const callbackAuth = callbackNonceStore
     ? new CallbackAuth({
         keys: [{ version: 1, secret: appSecret }],
@@ -672,6 +683,22 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const chatId = firstMsg.chatId;
   const threadId = firstMsg.threadId;
 
+  // The user replied with text instead of clicking — if the previous turn left
+  // an interactive card open, auto-close it (grey out its buttons) so it can't
+  // also be clicked. A card click comes in as 'card_action' and is handled by
+  // the dispatcher's lock instead, so skip those. Best-effort + detached.
+  if (firstMsg.rawContentType !== 'card_action') {
+    const open = takeScopeOpenCard(scope);
+    if (open) {
+      void channel.updateCard(open.messageId, disabledCard(open.card)).catch((err) =>
+        log.warn('agent-card', 'auto-close-failed', {
+          scope,
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
+
   const resourceItems = batch.flatMap((m) =>
     m.resources.map((r) => ({ messageId: m.messageId, resource: r })),
   );
@@ -1006,6 +1033,15 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     }
   } catch (err) {
     log.fail('stream', err);
+    // Never fail silently: without this the user just sees their message
+    // ignored (or a card stuck on "running") with no hint anything broke.
+    await channel
+      .send(
+        chatId,
+        { markdown: '⚠️ 这条消息处理中断了(内部错误),请重发一次;反复出现可用 /doctor 排查。' },
+        sendOpts,
+      )
+      .catch(() => {});
   } finally {
     activePolicyFingerprints.delete(scope);
     finalizeRunReactions(channel, lastMsg.messageId, reactionPromise);
@@ -1049,15 +1085,23 @@ async function processAgentStream(
     if (!idleTimeoutMs) return;
     if (timer) clearTimeout(timer);
     timer = undefined;
-    if (inFlightTools.size > 0) return;
+    // Tools in flight get a long backstop instead of no watchdog at all: a
+    // legitimately slow tool (lark-cli blocking on an OAuth click) fits well
+    // inside it, but a tool that died without ever emitting a tool_result
+    // would otherwise hang this run forever.
+    const ms = inFlightTools.size > 0 ? Math.max(idleTimeoutMs, TOOL_BACKSTOP_MS) : idleTimeoutMs;
     timer = setTimeout(() => {
       idleFired = true;
       handle.interrupted = true;
-      log.warn('agent', 'idle-timeout', { scope, idleTimeoutMs });
+      log.warn('agent', 'idle-timeout', {
+        scope,
+        idleTimeoutMs: ms,
+        inFlightTools: inFlightTools.size,
+      });
       void handle.run.stop().catch(() => {
         /* stop errors are non-fatal */
       });
-    }, idleTimeoutMs);
+    }, ms);
   };
   armOrPauseIdle();
 

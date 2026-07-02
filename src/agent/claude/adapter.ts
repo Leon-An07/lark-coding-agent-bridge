@@ -22,6 +22,12 @@ export interface ClaudeAdapterOptions {
 
 type ClaudeChild = SpawnedProcessByStdio<null, Readable, Readable>;
 
+/** Error text claude prints when `--resume` points at a session that no
+ * longer exists (or never did). Empirically verified against claude CLI:
+ * exit code 0, result event `error_during_execution`, this line in errors[]. */
+const DEAD_SESSION_RE =
+  /No conversation found with session ID|is not a UUID and does not match any session title/;
+
 export class ClaudeAdapter implements AgentAdapter {
   readonly id = 'claude';
   readonly displayName = 'Claude Code';
@@ -53,6 +59,44 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   run(opts: AgentRunOptions): AgentRun {
+    const first = this.spawnOnce(opts);
+    if (!opts.sessionId) return first;
+
+    // `--resume` with a dead session id (deleted/expired transcript) makes
+    // claude exit 0 with an error result before doing anything. Without a
+    // fallback the stale id also stays in sessions.json, so every following
+    // message in the chat fails the same way. Retry once without --resume;
+    // the fresh run's init event then overwrites the stored session id.
+    const holder = { active: first };
+    const spawnFresh = (): AgentRun => this.spawnOnce({ ...opts, sessionId: undefined });
+    async function* events(): AsyncGenerator<AgentEvent> {
+      let sawSubstantive = false;
+      for await (const evt of first.events) {
+        if (evt.type === 'text' || evt.type === 'thinking' || evt.type === 'tool_use') {
+          sawSubstantive = true;
+        }
+        if (evt.type === 'error' && !sawSubstantive && DEAD_SESSION_RE.test(evt.message)) {
+          log.warn('agent', 'resume-fallback', {
+            sessionId: opts.sessionId,
+            err: evt.message.slice(0, 200),
+          });
+          const fresh = spawnFresh();
+          holder.active = fresh;
+          yield* fresh.events;
+          return;
+        }
+        yield evt;
+      }
+    }
+    return {
+      runId: opts.runId,
+      events: events(),
+      stop: () => holder.active.stop(),
+      waitForExit: (timeoutMs: number) => holder.active.waitForExit(timeoutMs),
+    };
+  }
+
+  private spawnOnce(opts: AgentRunOptions): AgentRun {
     if (!opts.cwd) {
       throw new Error('cwd is required for ClaudeAdapter.run');
     }

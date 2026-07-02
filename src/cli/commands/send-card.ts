@@ -3,6 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { CallbackAuth } from '../../card/callback-auth';
 import { CallbackNonceStore } from '../../card/callback-store';
 import { injectBridgeTokens } from '../../card/bridge-token-card';
+import {
+  configureOpenCardStore,
+  flushOpenCardStore,
+  setScopeOpenCard,
+} from '../../card/managed';
 import { resolveAppSecret } from '../../config/secret-resolver';
 import { resolveProfileRuntime } from '../../runtime/profile-runtime';
 
@@ -55,6 +60,22 @@ export async function runSendCard(opts: SendCardCommandOptions): Promise<void> {
   });
 
   const result = await channel.send(opts.chatId, { card: prepared.card });
+
+  // Record the card in the shared open-card store so the daemon can grey it
+  // out if the user answers with a text reply instead of clicking. Only cards
+  // with a signed callback are answerable — plain navigation cards need no
+  // auto-close. Best-effort: a failure here must not fail the send.
+  if (prepared.signedCallbacks > 0 || prepared.alreadySignedCallbacks > 0) {
+    try {
+      configureOpenCardStore(`${runtime.appPaths.profileDir}/open-cards.json`);
+      setScopeOpenCard(opts.chatId, result.messageId, prepared.card);
+      await flushOpenCardStore();
+    } catch (err) {
+      console.error(
+        `[send-card] warning: open-card tracking failed (${err instanceof Error ? err.message : String(err)})`,
+      );
+    }
+  }
   printSignSummary(prepared, `sent message ${result.messageId}`);
 }
 

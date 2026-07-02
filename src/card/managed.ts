@@ -1,5 +1,7 @@
 import type { LarkChannel } from '@larksuite/channel';
+import { readFileSync } from 'node:fs';
 import { log } from '../core/logger';
+import { writeFileAtomic } from '../platform/atomic-write';
 
 interface ManagedEntry {
   cardId: string;
@@ -15,20 +17,78 @@ const MAX_TRACKED = 500;
 
 // The latest still-open agent card per scope, so a plain text reply (instead of
 // a click) can auto-close it. Stores the rendered card to disable its buttons.
-const openCardByScope = new Map<string, { messageId: string; card: object }>();
+//
+// File-backed when configured: agent cards are sent by the `send-card` CLI (a
+// separate short-lived process), so the daemon can only learn about them
+// through a shared file — an in-memory map here would simply never be set.
+// Same profile-dir JSON pattern as callback-nonces.json. The in-memory map
+// remains as the no-store fallback (tests, unconfigured runs).
+interface OpenCardEntry {
+  messageId: string;
+  card: object;
+}
+
+const openCardByScope = new Map<string, OpenCardEntry>();
+let openCardStorePath: string | undefined;
+// Serialize writes so a set/take burst can't interleave partial states.
+let openCardPersistChain: Promise<void> = Promise.resolve();
+
+export function configureOpenCardStore(path: string | undefined): void {
+  openCardStorePath = path;
+}
+
+/** Await pending open-card writes — short-lived processes (send-card CLI)
+ * must call this before exiting or the write may be lost. */
+export function flushOpenCardStore(): Promise<void> {
+  return openCardPersistChain;
+}
+
+function readOpenCardFile(): Record<string, OpenCardEntry> {
+  if (!openCardStorePath) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(openCardStorePath, 'utf8')) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, OpenCardEntry>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistOpenCards(entries: Record<string, OpenCardEntry>): void {
+  const path = openCardStorePath;
+  if (!path) return;
+  openCardPersistChain = openCardPersistChain
+    .then(() => writeFileAtomic(path, `${JSON.stringify(entries)}\n`))
+    .catch((err) => {
+      log.warn('agent-card', 'open-card-persist-failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    });
+}
 
 /** Remember the open agent card for a scope (overwrites any prior). */
 export function setScopeOpenCard(scope: string, messageId: string, card: object): void {
   openCardByScope.set(scope, { messageId, card });
+  if (!openCardStorePath) return;
+  const all = readOpenCardFile();
+  all[scope] = { messageId, card };
+  persistOpenCards(all);
 }
 
 /** Get + clear the scope's open card (whether it's being closed or answered). */
-export function takeScopeOpenCard(
-  scope: string,
-): { messageId: string; card: object } | undefined {
-  const entry = openCardByScope.get(scope);
+export function takeScopeOpenCard(scope: string): OpenCardEntry | undefined {
+  const mem = openCardByScope.get(scope);
   openCardByScope.delete(scope);
-  return entry;
+  if (!openCardStorePath) return mem;
+  const all = readOpenCardFile();
+  const fromFile = all[scope];
+  if (fromFile) {
+    delete all[scope];
+    persistOpenCards(all);
+  }
+  // The file entry wins: it's the cross-process source of truth.
+  return fromFile ?? mem;
 }
 
 /** Lark client-side keeps a form/card locked while the cardAction handler is

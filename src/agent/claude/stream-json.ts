@@ -25,6 +25,8 @@ interface ClaudeRawEvent {
     cache_read_input_tokens?: number;
   };
   total_cost_usd?: number;
+  is_error?: boolean;
+  errors?: unknown[];
 }
 
 export function* translateEvent(raw: unknown): Generator<AgentEvent> {
@@ -79,6 +81,21 @@ export function* translateEvent(raw: unknown): Generator<AgentEvent> {
         cachedInputTokens: evt.usage.cache_read_input_tokens,
         costUsd: evt.total_cost_usd,
       };
+    }
+    // claude exits 0 even when the run failed (e.g. `--resume` with a dead
+    // session id → subtype "error_during_execution"); the only failure signal
+    // is is_error on the result event. Mapping that to done/normal would
+    // swallow the error and leave the user with a silent empty reply.
+    if (evt.is_error === true) {
+      const errs = Array.isArray(evt.errors)
+        ? evt.errors.filter((e): e is string => typeof e === 'string')
+        : [];
+      yield {
+        type: 'error',
+        message: errs.join('; ') || `claude run failed (${evt.subtype ?? 'unknown'})`,
+        terminationReason: 'failed',
+      };
+      return;
     }
     yield { type: 'done', sessionId: evt.session_id, terminationReason: 'normal' };
   }

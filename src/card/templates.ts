@@ -77,6 +77,38 @@ export function expiredCard(): object {
   };
 }
 
+/**
+ * Grey out a still-open interactive card after the user answered with a text
+ * reply instead of a click: grey header, every button disabled + its callback
+ * value stripped, and a closed-note prepended. Options stay visible but inert.
+ */
+export function disabledCard(card: object): object {
+  const clone = JSON.parse(JSON.stringify(card)) as {
+    header?: { template?: string };
+    body?: { elements?: unknown[] };
+  };
+  disableButtons(clone);
+  if (clone.header) clone.header.template = 'grey'; // grey header signals "closed"
+  const body = (clone.body ??= {});
+  (body.elements ??= []).unshift({ tag: 'markdown', content: '_已改用文字回复,此卡已关闭_' });
+  return clone;
+}
+
+function disableButtons(node: unknown): void {
+  if (Array.isArray(node)) {
+    for (const child of node) disableButtons(child);
+    return;
+  }
+  if (!node || typeof node !== 'object') return;
+  const obj = node as Record<string, unknown>;
+  if (obj.tag === 'button') {
+    obj.disabled = true;
+    delete obj.behaviors;
+    delete obj.value;
+  }
+  for (const key of Object.keys(obj)) disableButtons(obj[key]);
+}
+
 export function workspacesCard(current: string | undefined, named: Record<string, string>): object {
   const entries = Object.entries(named);
   const elements: object[] = [];

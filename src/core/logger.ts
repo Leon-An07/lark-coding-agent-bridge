@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createWriteStream, mkdirSync, type WriteStream } from 'node:fs';
+import { createWriteStream, mkdirSync, readdirSync, statSync, type WriteStream } from 'node:fs';
 import { open, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { telemetry } from './telemetry';
@@ -58,6 +58,14 @@ const als = new AsyncLocalStorage<LogContext>();
 
 let stream: WriteStream | null = null;
 let currentDate = '';
+let currentSuffix = 1;
+let currentSize = 0;
+
+/** Size cap per log file. A busy day would otherwise grow one .jsonl file
+ * unbounded (retention GC is day-based) until the disk fills and takes the
+ * daemon down with it. On overflow we roll to bridge-YYYYMMDD.2.jsonl etc. */
+const MAX_LOG_FILE_BYTES =
+  Math.max(1, Number(process.env.LARK_CHANNEL_LOG_MAX_MB ?? 128) || 128) * 1024 * 1024;
 
 function todayKey(): string {
   return loggerOptions.now().toISOString().slice(0, 10).replace(/-/g, '');
@@ -67,15 +75,43 @@ function logsDir(): string | undefined {
   return loggerOptions.logsDir;
 }
 
-function logFileName(dateKey: string): string {
-  return `bridge-${dateKey}.jsonl`;
+function logFileName(dateKey: string, suffix = 1): string {
+  return suffix <= 1 ? `bridge-${dateKey}.jsonl` : `bridge-${dateKey}.${suffix}.jsonl`;
+}
+
+/** Highest existing rotation suffix for a date, so a restart keeps appending
+ * to the newest file instead of re-growing the first one. */
+function latestSuffixFor(dir: string, dateKey: string): number {
+  let suffix = 1;
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return suffix;
+  }
+  const re = new RegExp(`^bridge-${dateKey}(?:\\.(\\d+))?\\.jsonl$`);
+  for (const name of entries) {
+    const m = name.match(re);
+    if (!m) continue;
+    const s = m[1] ? Number(m[1]) : 1;
+    if (s > suffix) suffix = s;
+  }
+  return suffix;
+}
+
+function fileSize(path: string): number {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
 }
 
 function getStream(): WriteStream | null {
   const dir = logsDir();
   if (!dir) return null;
   const today = todayKey();
-  if (stream && currentDate === today) return stream;
+  if (stream && currentDate === today && currentSize < MAX_LOG_FILE_BYTES) return stream;
   if (stream) {
     try {
       stream.end();
@@ -85,8 +121,21 @@ function getStream(): WriteStream | null {
   }
   try {
     mkdirSync(dir, { recursive: true });
-    stream = createWriteStream(join(dir, logFileName(today)), { flags: 'a' });
-    currentDate = today;
+    if (currentDate !== today) {
+      currentDate = today;
+      currentSuffix = latestSuffixFor(dir, today);
+    } else {
+      currentSuffix += 1; // size overflow → next suffix
+    }
+    let path = join(dir, logFileName(today, currentSuffix));
+    let size = fileSize(path);
+    if (size >= MAX_LOG_FILE_BYTES) {
+      currentSuffix += 1;
+      path = join(dir, logFileName(today, currentSuffix));
+      size = fileSize(path);
+    }
+    stream = createWriteStream(path, { flags: 'a' });
+    currentSize = size;
     return stream;
   } catch {
     return null;
@@ -247,7 +296,9 @@ function emit(level: Level, phase: string, event: string, fields: LogFields = {}
   const s = getStream();
   if (s) {
     try {
-      s.write(`${JSON.stringify(entry)}\n`);
+      const line = `${JSON.stringify(entry)}\n`;
+      s.write(line);
+      currentSize += Buffer.byteLength(line, 'utf8');
     } catch {
       /* swallow disk errors — logging should never crash the bot */
     }
@@ -408,6 +459,8 @@ export function configureLogger(opts: Partial<LoggerOptions>): void {
   }
   stream = null;
   currentDate = '';
+  currentSuffix = 1;
+  currentSize = 0;
   loggerOptions = {
     ...(opts.logsDir !== undefined ? { logsDir: opts.logsDir } : { logsDir: loggerOptions.logsDir }),
     retentionDays: Math.max(1, opts.retentionDays ?? loggerOptions.retentionDays),
@@ -560,8 +613,8 @@ export async function readRecentLogs(opts: { maxBytes: number }): Promise<string
     .toISOString()
     .slice(0, 10)
     .replace(/-/g, '');
-  const todayPath = join(dir, logFileName(today));
-  const yesterdayPath = join(dir, logFileName(yesterday));
+  const todayPath = join(dir, logFileName(today, latestSuffixFor(dir, today)));
+  const yesterdayPath = join(dir, logFileName(yesterday, latestSuffixFor(dir, yesterday)));
 
   const tail = await readTail(todayPath, opts.maxBytes);
   if (tail.length >= opts.maxBytes / 2) return tail;
@@ -588,7 +641,7 @@ export async function gcOldLogs(): Promise<number> {
   const cutoff = loggerOptions.now().getTime() - loggerOptions.retentionDays * 86_400_000;
   let removed = 0;
   for (const name of entries) {
-    const m = name.match(/^bridge-(\d{4})(\d{2})(\d{2})\.jsonl$/);
+    const m = name.match(/^bridge-(\d{4})(\d{2})(\d{2})(?:\.\d+)?\.jsonl$/);
     if (!m) continue;
     const fileMs = Date.parse(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
     if (Number.isNaN(fileMs) || fileMs >= cutoff) continue;
