@@ -22,6 +22,7 @@ import { acquireProfileRuntimeLock, checkRuntimeLock } from '../../runtime/locks
 import { readAndPrune } from '../../runtime/registry';
 import { listAllProfiles } from '../../runtime/profile-discovery';
 import { resolveProfileRuntime } from '../../runtime/profile-runtime';
+import { msgs } from '../../i18n';
 
 export interface ProfileCommandOptions {
   rootDir?: string;
@@ -55,7 +56,7 @@ export async function runProfileList(opts: ProfileCommandOptions = {}): Promise<
     profiles = await listAllProfiles(rootDir);
   } catch (err) {
     if (!(err instanceof Error) || !err.message.startsWith('root config not found:')) throw err;
-    console.log('暂无 profile。');
+    console.log(msgs().cli.profileNone);
     return;
   }
 
@@ -133,7 +134,7 @@ export async function runProfileCreate(
       allowBootstrap: true,
     });
   });
-  console.log(`已创建 profile: ${name}`);
+  console.log(msgs().cli.profileCreated(name));
 }
 
 export async function runProfileUse(
@@ -149,7 +150,7 @@ export async function runProfileUse(
     await saveRootConfig(root, configFile);
     await writeActiveProfile(rootDir, name);
   });
-  console.log(`已切换到 profile: ${name}`);
+  console.log(msgs().cli.profileSwitched(name));
 }
 
 export async function runProfileRemove(
@@ -211,10 +212,10 @@ export async function runProfileRemove(
       }
       if (result.purged) {
         await result.cleanup?.();
-        console.log(`已永久删除 profile: ${name}`);
+        console.log(msgs().cli.profilePurged(name));
         return;
       }
-      console.log(`已归档 profile: ${name} -> ${result.archivedTo}`);
+      console.log(msgs().cli.profileArchived(name, result.archivedTo));
     } finally {
       await lock.release().catch(() => {});
     }
@@ -268,7 +269,7 @@ export async function runProfileExport(
     throw new Error('output already exists; use --force');
   }
   await writeFileAtomic(opts.output, body, { mode: 0o600 });
-  console.log(`已导出 profile: ${name} -> ${opts.output}`);
+  console.log(msgs().cli.profileExported(name, opts.output));
 }
 
 function cloneJson<T>(value: T): T {

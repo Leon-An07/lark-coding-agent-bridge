@@ -72,6 +72,7 @@ import { ProcessPool } from './process-pool';
 import { fetchQuotedContext, type QuotedContext } from './quote';
 import { addDoneReaction, addWorkingReaction, removeReaction } from './reaction';
 import { fetchKnownChats } from './lark-info';
+import { msgs } from '../i18n';
 import type { AppPaths } from '../config/app-paths';
 
 const DEBOUNCE_MS = 600;
@@ -306,7 +307,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
         try {
           await channel.send(
             firstMsg.chatId,
-            { text: `⚠️ 本次消息处理失败，未能发起 agent 运行：${detail.slice(0, 200)}` },
+            { text: msgs().bot.flushFailedNotice(detail.slice(0, 200)) },
             { replyTo: firstMsg.messageId },
           );
         } catch (notifyErr) {
@@ -387,9 +388,9 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       reportMetric('ws_reconnect', 1, { kind: 'ws' });
       // Stdout escalation — surface jitter that's hidden in the file log.
       if (consecutiveReconnects === 3) {
-        console.error('⚠️ 已连续重连 3 次,网络可能不稳。');
+        console.error(msgs().bot.reconnectWarn3);
       } else if (consecutiveReconnects === 10) {
-        console.error('❌ 已连续重连 10 次,建议在飞书发 /reconnect 或重启 bot。');
+        console.error(msgs().bot.reconnectWarn10);
       }
     },
     reconnected: () => {
@@ -442,7 +443,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     appId: cfg.accounts.app.id,
     procId: controls.processId,
   });
-  console.log('正在监听消息。按 Ctrl+C 退出。\n');
+  console.log(`${msgs().bot.listening}\n`);
 
   // App-level keepalive: 15s probe + wake-up detection + HTTP reachability.
   // Defense-in-depth — the SDK's pingTimeout watchdog handles half-dead WS,
@@ -513,9 +514,7 @@ async function sendNonAllowedGroupHint(
   chatId: string,
   replyToMessageId: string,
 ): Promise<void> {
-  const text =
-    '当前群尚未加入响应列表，所以 bot 不会处理消息。\n' +
-    'Bot owner/管理员可在本群发 /invite group 加入白名单。';
+  const text = msgs().bot.nonAllowedGroupHint;
   try {
     await channel.send(chatId, { text }, { replyTo: replyToMessageId });
   } catch {
@@ -1079,7 +1078,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     await channel
       .send(
         chatId,
-        { markdown: '⚠️ 这条消息处理中断了(内部错误),请重发一次;反复出现可用 /doctor 排查。' },
+        { markdown: msgs().bot.streamInterrupted },
         sendOpts,
       )
       .catch(() => {});

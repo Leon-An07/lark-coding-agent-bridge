@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import { join } from 'node:path';
+import { msgs } from '../i18n';
 import {
   mergeProcessEnv,
   spawnProcess,
@@ -242,7 +243,7 @@ function normalizeThread(input: unknown): CodexThreadHistoryEntry | undefined {
   return {
     threadId,
     ...(stringValue(raw.sessionId) ? { sessionId: stringValue(raw.sessionId) } : {}),
-    preview: normalizeSessionPreview(stringValue(raw.preview) ?? '') || '(空会话)',
+    preview: normalizeSessionPreview(stringValue(raw.preview) ?? '') || msgs().cli.emptySessionPreview,
     cwd,
     createdAtMs: Math.round((createdAt ?? 0) * 1000),
     updatedAtMs: Math.round((updatedAt ?? 0) * 1000),

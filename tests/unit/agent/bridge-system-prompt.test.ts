@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   BRIDGE_SYSTEM_PROMPT,
+  BRIDGE_SYSTEM_PROMPT_EN,
   buildBridgeSystemPrompt,
   prefixBridgeSystemPrompt,
 } from '../../../src/agent/bridge-system-prompt';
+import { DEFAULT_LOCALE, setActiveLocale } from '../../../src/i18n';
 
 describe('bridge system prompt bot collaboration rules', () => {
   it('states that bots only receive messages via a real structured mention', () => {
@@ -69,5 +71,78 @@ describe('prefixBridgeSystemPrompt', () => {
     const prompt = prefixBridgeSystemPrompt('hello world', undefined);
     expect(prompt.startsWith(BRIDGE_SYSTEM_PROMPT)).toBe(true);
     expect(prompt.endsWith('hello world')).toBe(true);
+  });
+});
+
+/** Collect full fenced code blocks (opening fence line through closing fence line). */
+function extractFences(text: string): string[] {
+  const fences: string[] = [];
+  let current: string[] | null = null;
+  for (const line of text.split('\n')) {
+    if (line.startsWith('```')) {
+      if (current) {
+        current.push(line);
+        fences.push(current.join('\n'));
+        current = null;
+      } else {
+        current = [line];
+      }
+    } else if (current) {
+      current.push(line);
+    }
+  }
+  return fences;
+}
+
+describe('locale variants of the bridge system prompt', () => {
+  afterEach(() => {
+    setActiveLocale(DEFAULT_LOCALE);
+  });
+
+  it('instructs replying in the language the user writes in, in both variants', () => {
+    expect(BRIDGE_SYSTEM_PROMPT).toContain('回复语言跟随用户');
+    expect(BRIDGE_SYSTEM_PROMPT).toContain('始终使用用户消息所用的语言回复');
+    expect(BRIDGE_SYSTEM_PROMPT_EN).toContain('Reply language follows the user');
+    expect(BRIDGE_SYSTEM_PROMPT_EN).toContain(
+      'always reply in the language the user writes in',
+    );
+  });
+
+  it('keeps machine-readable fenced blocks byte-identical across variants', () => {
+    const zhFences = extractFences(BRIDGE_SYSTEM_PROMPT);
+    const enFences = extractFences(BRIDGE_SYSTEM_PROMPT_EN);
+    expect(zhFences.length).toBeGreaterThan(0);
+    expect(enFences).toEqual(zhFences);
+  });
+
+  it('keeps the send-card contract markers in the en variant', () => {
+    expect(BRIDGE_SYSTEM_PROMPT_EN).toContain('__bridge_cb');
+    expect(BRIDGE_SYSTEM_PROMPT_EN).toContain('```lark-card```');
+    expect(BRIDGE_SYSTEM_PROMPT_EN).toContain('[card-click]');
+    expect(BRIDGE_SYSTEM_PROMPT_EN).toContain(
+      'lark-channel-bridge send-card --chat-id <oc_xxx> --operator <ou_xxx|*> --file card.json',
+    );
+  });
+
+  it('selects the en variant at call time when the active locale is en-US', () => {
+    setActiveLocale('en-US');
+    expect(buildBridgeSystemPrompt(undefined)).toBe(BRIDGE_SYSTEM_PROMPT_EN);
+
+    const withIdentity = buildBridgeSystemPrompt({ openId: 'ou_bot_self', name: 'Nemo' });
+    expect(withIdentity.startsWith(BRIDGE_SYSTEM_PROMPT_EN)).toBe(true);
+    expect(withIdentity).toContain('## Your identity');
+    expect(withIdentity).toContain('ou_bot_self');
+    expect(withIdentity).toContain('Nemo');
+
+    const wrapped = prefixBridgeSystemPrompt('hello world', undefined);
+    expect(wrapped.startsWith(BRIDGE_SYSTEM_PROMPT_EN)).toBe(true);
+    expect(wrapped).toContain('## user_message');
+    expect(wrapped.endsWith('hello world')).toBe(true);
+  });
+
+  it('returns to the zh variant after the locale is reset', () => {
+    setActiveLocale('en-US');
+    setActiveLocale(DEFAULT_LOCALE);
+    expect(buildBridgeSystemPrompt(undefined)).toBe(BRIDGE_SYSTEM_PROMPT);
   });
 });

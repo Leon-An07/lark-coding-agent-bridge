@@ -1,4 +1,5 @@
 import type { TenantBrand } from '../config/schema';
+import { msgs } from '../i18n';
 
 function maskAppId(id: string): string {
   if (id.length < 12) return id;
@@ -12,25 +13,24 @@ export interface CurrentInfo {
 }
 
 export function accountCurrentCard(info: CurrentInfo): object {
+  const m = msgs().cards;
   return {
     schema: '2.0',
-    config: { summary: { content: '当前应用' } },
+    config: { summary: { content: m.accountCurrentSummary } },
     body: {
       elements: [
         {
           tag: 'markdown',
-          content: [
-            '📋 **当前应用**',
-            '',
-            `**App ID**: \`${maskAppId(info.appId)}\``,
-            `**Bot 名**: ${info.botName ?? '(未知)'}`,
-            `**Tenant**: ${info.tenant}`,
-          ].join('\n'),
+          content: m.accountCurrentBody(
+            maskAppId(info.appId),
+            info.botName ?? m.unknownValue,
+            info.tenant,
+          ),
         },
         { tag: 'hr' },
         {
           tag: 'button',
-          text: { tag: 'plain_text', content: '更换凭据' },
+          text: { tag: 'plain_text', content: m.accountChangeLabel },
           type: 'primary',
           behaviors: [{ type: 'callback', value: { cmd: 'account.change' } }],
         },
@@ -46,12 +46,13 @@ export interface FormCardOpts {
 }
 
 export function accountFormCard(opts: FormCardOpts = {}): object {
+  const m = msgs().cards;
   const { initialTenant = 'feishu', prefillAppId, errorMessage } = opts;
   const bodyElements: object[] = [];
   if (errorMessage) {
     bodyElements.push({
       tag: 'markdown',
-      content: `❌ **校验失败**：${errorMessage}`,
+      content: m.accountValidationFailedInline(errorMessage),
     });
   }
   bodyElements.push({
@@ -70,7 +71,7 @@ export function accountFormCard(opts: FormCardOpts = {}): object {
         tag: 'input',
         name: 'app_secret',
         label: { tag: 'plain_text', content: 'App Secret' },
-        placeholder: { tag: 'plain_text', content: '32 位字符串' },
+        placeholder: { tag: 'plain_text', content: m.appSecretPlaceholder },
         // Never prefill secret — even on validation retry. Pre-filled secrets
         // can leak into Lark's server-side card cache.
         required: true,
@@ -81,8 +82,8 @@ export function accountFormCard(opts: FormCardOpts = {}): object {
         name: 'tenant',
         initial_option: initialTenant,
         options: [
-          { text: { tag: 'plain_text', content: 'Feishu (国内)' }, value: 'feishu' },
-          { text: { tag: 'plain_text', content: 'Lark (海外)' }, value: 'lark' },
+          { text: { tag: 'plain_text', content: m.tenantFeishu }, value: 'feishu' },
+          { text: { tag: 'plain_text', content: m.tenantLark }, value: 'lark' },
         ],
       },
       {
@@ -97,7 +98,7 @@ export function accountFormCard(opts: FormCardOpts = {}): object {
               {
                 tag: 'button',
                 name: 'submit_btn',
-                text: { tag: 'plain_text', content: '提交' },
+                text: { tag: 'plain_text', content: m.submit },
                 type: 'primary',
                 form_action_type: 'submit',
                 behaviors: [{ type: 'callback', value: { cmd: 'account.submit' } }],
@@ -111,7 +112,7 @@ export function accountFormCard(opts: FormCardOpts = {}): object {
               {
                 tag: 'button',
                 name: 'cancel_btn',
-                text: { tag: 'plain_text', content: '取消' },
+                text: { tag: 'plain_text', content: m.cancel },
                 behaviors: [{ type: 'callback', value: { cmd: 'account.cancel' } }],
               },
             ],
@@ -123,39 +124,30 @@ export function accountFormCard(opts: FormCardOpts = {}): object {
 
   return {
     schema: '2.0',
-    config: { summary: { content: '更换凭据' } },
+    config: { summary: { content: m.accountChangeLabel } },
     body: { elements: bodyElements },
   };
 }
 
 export function accountValidatingCard(): object {
+  const m = msgs().cards;
   return {
     schema: '2.0',
-    config: { summary: { content: '正在校验...' } },
-    body: { elements: [{ tag: 'markdown', content: '⏳ **正在校验凭据...**' }] },
+    config: { summary: { content: m.accountValidatingSummary } },
+    body: { elements: [{ tag: 'markdown', content: m.accountValidatingBody }] },
   };
 }
 
 export function accountSuccessCard(info: CurrentInfo): object {
+  const m = msgs().cards;
   return {
     schema: '2.0',
-    config: { summary: { content: '已保存' } },
+    config: { summary: { content: m.accountSavedSummary } },
     body: {
       elements: [
         {
           tag: 'markdown',
-          content: [
-            '✅ **凭据已保存**',
-            '',
-            `**App ID**: \`${maskAppId(info.appId)}\``,
-            info.botName ? `**Bot 名**: ${info.botName}` : '',
-            `**Tenant**: ${info.tenant}`,
-            '',
-            '正在用新凭据重连 WebSocket...',
-            '⚠️ 如果新 bot 不在此群，后续消息将由新 bot 接管，老 bot 不会再回复。',
-          ]
-            .filter(Boolean)
-            .join('\n'),
+          content: m.accountSuccessBody(maskAppId(info.appId), info.botName, info.tenant),
         },
       ],
     },
@@ -163,14 +155,15 @@ export function accountSuccessCard(info: CurrentInfo): object {
 }
 
 export function accountFailureCard(reason: string): object {
+  const m = msgs().cards;
   return {
     schema: '2.0',
-    config: { summary: { content: '校验失败' } },
+    config: { summary: { content: m.accountFailureSummary } },
     body: {
       elements: [
         {
           tag: 'markdown',
-          content: `❌ **校验失败**\n\n\`${reason}\`\n\n请检查 App ID 和 Secret 是否正确，重发 \`/account change\` 重试。`,
+          content: m.accountFailureBody(reason),
         },
       ],
     },
@@ -178,9 +171,10 @@ export function accountFailureCard(reason: string): object {
 }
 
 export function accountCancelledCard(): object {
+  const m = msgs().cards;
   return {
     schema: '2.0',
-    config: { summary: { content: '已取消' } },
-    body: { elements: [{ tag: 'markdown', content: '已取消，未做任何修改。' }] },
+    config: { summary: { content: m.cancelledSummary } },
+    body: { elements: [{ tag: 'markdown', content: m.accountCancelledBody }] },
   };
 }

@@ -15,6 +15,7 @@ import { agentKindFromString } from '../../config/profile-store';
 import type { RootConfig } from '../../config/profile-schema';
 import { isComplete, type AppCredentials, type AppConfig } from '../../config/schema';
 import { saveConfig } from '../../config/store';
+import { msgs } from '../../i18n';
 
 export interface MigrateOptions {
   config?: string;
@@ -55,10 +56,11 @@ export async function runMigrate(opts: MigrateOptions): Promise<void> {
       : {}),
   }, opts);
   if (!result) return;
+  const m = msgs();
   if (result.migrated) {
-    console.log(`✓ 已升级 profile 目录结构：${result.profile}`);
+    console.log(m.cli.migrateProfileUpgraded(result.profile));
   } else {
-    console.log(`✓ profile 目录结构已是最新：${result.profile}`);
+    console.log(m.cli.migrateProfileUpToDate(result.profile));
   }
 }
 
@@ -74,7 +76,7 @@ async function migrateProfileV2WithActiveBridgePrompt(
       if (commandOptions.confirmStopActiveBridgeProcesses) {
         const confirmed = await commandOptions.confirmStopActiveBridgeProcesses(err.processes);
         if (!confirmed) {
-          console.log('已取消迁移。');
+          console.log(msgs().cli.migrateCancelled);
           return undefined;
         }
         if (commandOptions.stopActiveBridgeProcesses) {
@@ -86,7 +88,7 @@ async function migrateProfileV2WithActiveBridgePrompt(
       }
 
       const handled = await promptAndStopActiveBridgeMigrationConflict(err, {
-        cancelMessage: '已取消迁移。',
+        cancelMessage: msgs().cli.migrateCancelled,
       });
       if (!handled) return undefined;
     }
@@ -109,27 +111,29 @@ export async function promptAndStopActiveBridgeMigrationConflict(
 async function confirmStopActiveBridgeProcesses(
   processes: ActiveBridgeMigrationProcess[],
 ): Promise<boolean> {
-  console.log('检测到 bridge 正在运行，迁移需要先停止这些进程:');
+  const m = msgs();
+  console.log(m.cli.migrateBridgeRunning);
   for (const active of processes) {
     console.log(`  - ${formatActiveBridgeProcess(active)}`);
   }
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error('检测到 bridge 正在运行；非交互模式无法确认停止，请先停止后重试迁移');
+    throw new Error(m.cli.migrateNonInteractiveError);
   }
 
-  const answer = (await promptLine('是否停止这些进程并继续迁移? [y/N]: ')).trim().toLowerCase();
+  const answer = (await promptLine(m.cli.migrateConfirmStop)).trim().toLowerCase();
   return answer === 'y' || answer === 'yes';
 }
 
 async function stopActiveBridgeProcesses(processes: ActiveBridgeMigrationProcess[]): Promise<void> {
+  const m = msgs();
   for (const active of processes) {
-    console.log(`正在停止 ${formatActiveBridgeProcess(active)}...`);
+    console.log(m.cli.migrateStoppingProcess(formatActiveBridgeProcess(active)));
     const result = await stopProcessEntry(active);
     if (result === 'killed') {
-      console.log(`✓ 已强制停止 pid ${active.pid}`);
+      console.log(m.cli.forceStoppedPid(active.pid));
     } else {
-      console.log(`✓ 已停止 pid ${active.pid}`);
+      console.log(m.cli.stoppedPid(active.pid));
     }
   }
 }
@@ -167,7 +171,7 @@ async function migrateLegacyPaths(): Promise<void> {
   if (legacyConfig) {
     await moveDirContents(legacyPaths.appDir, paths.appDir);
     await rmIfEmpty(legacyPaths.appDir);
-    console.log(`✓ 已搬迁配置：${legacyPaths.appDir} → ${paths.appDir}`);
+    console.log(msgs().cli.migrateMovedConfig(legacyPaths.appDir, paths.appDir));
   }
   if (legacyCache) {
     // Move media subdirectory if present.
@@ -179,17 +183,18 @@ async function migrateLegacyPaths(): Promise<void> {
     // Move anything else at the top level too.
     await moveDirContents(legacyPaths.cacheDir, paths.appDir);
     await rmIfEmpty(legacyPaths.cacheDir);
-    console.log(`✓ 已搬迁缓存：${legacyPaths.cacheDir} → ${paths.appDir}`);
+    console.log(msgs().cli.migrateMovedCache(legacyPaths.cacheDir, paths.appDir));
   }
 }
 
 async function migrateConfigShape(path: string): Promise<void> {
+  const m = msgs();
   let raw: string;
   try {
     raw = await readFile(path, 'utf8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      console.log('  config.json 不存在，跳过结构迁移');
+      console.log(m.cli.migrateConfigMissing);
       return;
     }
     throw err;
@@ -199,32 +204,32 @@ async function migrateConfigShape(path: string): Promise<void> {
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    console.error(`✗ config 不是合法 JSON (${path}):`, err);
+    console.error(m.cli.migrateConfigInvalidJson(path), err);
     process.exit(1);
   }
 
   if (isRootConfigV2(parsed)) {
-    console.log(`✓ config 结构已是 profile v2 格式：${path}`);
+    console.log(m.cli.migrateConfigAlreadyV2(path));
     return;
   }
 
   const obj = parsed as Partial<AppConfig> & LegacyShape;
 
   if (isComplete(obj)) {
-    console.log(`✓ config 结构已是新格式：${path}`);
+    console.log(m.cli.migrateConfigAlreadyNew(path));
     return;
   }
 
   if (obj.app?.id && obj.app.secret && obj.app.tenant) {
     const next: AppConfig = { accounts: { app: obj.app } };
     await saveConfig(next, path);
-    console.log(`✓ 已升级 config 结构：${path}`);
+    console.log(m.cli.migrateConfigUpgraded(path));
     console.log('  { app: ... } → { accounts: { app: ... } }');
     return;
   }
 
-  console.error(`✗ 无法识别的 config 格式：${path}`);
-  console.error('  期望 { app: { id, secret, tenant } } 或 { accounts: { app: ... } }');
+  console.error(m.cli.migrateConfigUnrecognized(path));
+  console.error(m.cli.migrateConfigExpectedShape);
   process.exit(1);
 }
 
@@ -259,7 +264,7 @@ async function moveDirContents(from: string, to: string): Promise<void> {
     const src = join(from, name);
     const dst = join(to, name);
     if (await pathExists(dst)) {
-      console.log(`  · 跳过 ${name}（目标已存在）`);
+      console.log(msgs().cli.migrateSkipExisting(name));
       continue;
     }
     await rename(src, dst);

@@ -1,5 +1,6 @@
 import { readAndPrune, resolveTarget, isAlive } from '../../runtime/registry';
 import type { ProcessEntry } from '../../runtime/registry';
+import { msgs } from '../../i18n';
 
 /**
  * Pretty-print the list of running lark-channel-bridge processes.
@@ -9,12 +10,13 @@ import type { ProcessEntry } from '../../runtime/registry';
  * `updateEntry` call.
  */
 export function runPs(): void {
+  const m = msgs();
   const live = readAndPrune();
   if (live.length === 0) {
-    console.log('当前没有 bot 在运行。');
+    console.log(m.cli.psNoneRunning);
     return;
   }
-  console.log(`# 当前共 ${live.length} 个 bot 在运行\n`);
+  console.log(m.cli.psRunningCount(live.length));
   const rows = live.map((e, idx) => {
     const ago = formatAgo(Date.now() - new Date(e.startedAt).getTime());
     const app = e.botName ? `${e.botName} (${e.appId})` : e.appId;
@@ -27,35 +29,43 @@ export function runPs(): void {
       version: e.version,
     };
   });
-  const headers = { idx: '#', id: 'ID', pid: 'PID', app: 'Bot', started: '启动', version: '版本' };
+  const headers = {
+    idx: '#',
+    id: 'ID',
+    pid: 'PID',
+    app: 'Bot',
+    started: m.cli.psHeaderStarted,
+    version: m.cli.psHeaderVersion,
+  };
   printTable([headers, ...rows]);
 }
 
 export async function runKillCli(target: string | undefined): Promise<void> {
+  const m = msgs();
   if (!target) {
-    console.error('用法: lark-channel-bridge kill <bot id 或序号>');
+    console.error(m.cli.killUsage);
     process.exit(1);
   }
   const entry = resolveTarget(target);
   if (!entry) {
-    console.error(`✗ 没找到匹配的 bot:${target}`);
-    console.error('  用 `lark-channel-bridge ps` 看可选目标。');
+    console.error(m.cli.killNotFound(target));
+    console.error(m.cli.killSeeTargets);
     process.exit(1);
   }
-  console.log(`正在关闭 bot ${entry.id}…`);
+  console.log(m.cli.killClosing(entry.id));
   let result: StopProcessEntryResult;
   try {
     result = await stopProcessEntry(entry);
   } catch (err) {
-    console.error(`✗ 关闭失败:${(err as Error).message}`);
+    console.error(m.cli.killFailed((err as Error).message));
     process.exit(1);
   }
 
   if (result === 'killed') {
-    console.log(`✓ 已强制关闭 bot ${entry.id}。`);
+    console.log(m.cli.killForceClosed(entry.id));
     return;
   }
-  console.log(`✓ 已关闭 bot ${entry.id}。`);
+  console.log(m.cli.killClosed(entry.id));
 }
 
 export type StopProcessEntryResult = 'terminated' | 'killed';
@@ -86,10 +96,11 @@ export async function stopProcessEntry(
 }
 
 function formatAgo(ms: number): string {
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s 前`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m 前`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h 前`;
-  return `${Math.floor(ms / 86_400_000)}d 前`;
+  const m = msgs();
+  if (ms < 60_000) return m.cli.psAgoSeconds(Math.floor(ms / 1000));
+  if (ms < 3_600_000) return m.cli.psAgoMinutes(Math.floor(ms / 60_000));
+  if (ms < 86_400_000) return m.cli.psAgoHours(Math.floor(ms / 3_600_000));
+  return m.cli.psAgoDays(Math.floor(ms / 86_400_000));
 }
 
 /** Minimal fixed-width table. Header row is index 0. */

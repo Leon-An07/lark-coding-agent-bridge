@@ -8,6 +8,7 @@ import { getAgentStopGraceMs } from '../config/schema';
 import type { Controls } from '../commands';
 import { resolveAppPaths } from '../config/app-paths';
 import { log } from '../core/logger';
+import { msgs } from '../i18n';
 import { evaluateRunPolicy } from '../policy/run-policy';
 import { resolveWorkingDirectory } from '../policy/workspace';
 import { RunRejected } from '../runtime/errors';
@@ -164,7 +165,7 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
       code: workspace.reason,
       commentScopeId: runScopeId,
     });
-    await postCommentReply(channel, target, evt, `工作目录不可用：${workspace.userVisible}`, {
+    await postCommentReply(channel, target, evt, msgs().bot.commentWorkspaceUnavailable(workspace.userVisible), {
       isWhole: ctx.isWhole,
     }).catch((err) => {
       log.fail('comment', err, { step: 'postInvalidWorkspaceReply' });
@@ -360,7 +361,7 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
           reason: 'policy-expired',
           commentScopeId: runScopeId,
         });
-        await postCommentReply(channel, target, evt, '本次评论任务已超时，请重新 @ 我。', {
+        await postCommentReply(channel, target, evt, msgs().bot.commentTimedOut, {
           isWhole: ctx.isWhole,
         }).catch((err) => {
           log.fail('comment', err, { step: 'postTimeoutReply' });
@@ -377,8 +378,8 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
       }
 
       let reply = stripMarkdown(answer.trim());
-      if (errorMsg) reply = `⚠️ Claude 报错：${errorMsg}`;
-      if (!reply) reply = '（无回复内容）';
+      if (errorMsg) reply = msgs().bot.commentAgentError(errorMsg);
+      if (!reply) reply = msgs().bot.commentNoReply;
       if (reply.length > REPLY_MAX_CHARS) reply = `${reply.slice(0, REPLY_MAX_CHARS - 1)}…`;
 
       await postCommentReply(channel, target, evt, reply, { isWhole: ctx.isWhole }).catch((err) => {
@@ -485,15 +486,16 @@ function recordCommentSessionEvent(
 }
 
 function commentRunRejectedReply(code: RunRejected['code']): string | undefined {
+  const m = msgs();
   switch (code) {
     case 'run-already-active':
-      return '当前评论线程已有任务在执行，请稍后再试。';
+      return m.bot.commentRejectedActive;
     case 'pool-full':
-      return '当前任务较多，请稍后再试。';
+      return m.bot.commentRejectedPoolFull;
     case 'reconnect-in-progress':
-      return '当前 bot 正在重连，请稍后再试。';
+      return m.bot.commentRejectedReconnecting;
     case 'policy-expired':
-      return '本次评论任务已超时，请重新 @ 我。';
+      return m.bot.commentTimedOut;
   }
 }
 
@@ -622,7 +624,7 @@ async function resolveManagedCommentWorkingDirectory(
       reason: 'managed-fallback-unavailable',
       userVisible: [
         ...failures,
-        `托管工作目录不可用：${err instanceof Error ? err.message : String(err)}`,
+        msgs().bot.managedWorkspaceUnavailable(err instanceof Error ? err.message : String(err)),
       ].join('；'),
     };
   }

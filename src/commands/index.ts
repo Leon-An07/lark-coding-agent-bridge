@@ -39,6 +39,7 @@ import type {
 import {
   getAgentStopGraceMs,
   getCotMessages,
+  getLanguage,
   getMaxConcurrentRuns,
   getMessageReplyMode,
   getRequireMentionInGroup,
@@ -46,6 +47,7 @@ import {
   getShowToolCalls,
   secretKeyForApp,
 } from '../config/schema';
+import { msgs, normalizeLocale, setActiveLocale } from '../i18n';
 import type { ProfileAccess, ProfileConfig } from '../config/profile-schema';
 import { resolveAppPaths } from '../config/app-paths';
 import { accessToClaudePermissionMode } from '../config/permissions';
@@ -166,8 +168,6 @@ interface ResumeCandidate {
 
 const RESUME_CANDIDATE_TTL_MS = 10 * 60 * 1000;
 const resumeCandidates = new Map<string, ResumeCandidate>();
-const AUDIT_SAFE_COMMAND_REPLY = '命令已处理。';
-const RESUME_APPLIED_REPLY = '已完成，请继续发送下一条消息。';
 
 const handlers: Record<string, Handler> = {
   '/new': handleNew,
@@ -230,7 +230,7 @@ export async function tryHandleCommand(ctx: CommandContext): Promise<boolean> {
       cmd,
       sender: ctx.msg.senderId.slice(-6),
     });
-    await reply(ctx, '❌ 此命令仅管理员可用。');
+    await reply(ctx, msgs().commands.adminOnly);
     return true;
   }
   try {
@@ -284,11 +284,12 @@ async function reply(ctx: CommandContext, markdown: string): Promise<void> {
   } catch (err) {
     log.fail('command', err, { step: 'reply' });
     reportMetric('command_fail', 1, { step: 'reply' });
-    if (!isMessageAuditReject(err) || markdown === AUDIT_SAFE_COMMAND_REPLY) return;
+    const auditSafeReply = msgs().commands.auditSafeReply;
+    if (!isMessageAuditReject(err) || markdown === auditSafeReply) return;
     try {
       await ctx.channel.send(
         ctx.msg.chatId,
-        { markdown: AUDIT_SAFE_COMMAND_REPLY },
+        { markdown: auditSafeReply },
         { replyTo: ctx.msg.messageId },
       );
     } catch (fallbackErr) {
@@ -333,7 +334,8 @@ async function handleNew(args: string, ctx: CommandContext): Promise<void> {
     });
   }
   ctx.sessions.clear(ctx.scope);
-  await reply(ctx, wasRunning ? '已中断当前任务并开始新会话。' : '已开始新会话。');
+  const m = msgs();
+  await reply(ctx, wasRunning ? m.commands.newSessionInterrupted : m.commands.newSessionStarted);
 }
 
 async function handleNewChat(rawName: string, ctx: CommandContext): Promise<void> {
@@ -349,7 +351,7 @@ async function handleNewChat(rawName: string, ctx: CommandContext): Promise<void
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await reply(ctx, `❌ 创建群失败：${msg}\n\n确认 bot 已开启 \`im:chat\` 权限。`);
+    await reply(ctx, msgs().commands.createChatFailed(msg));
     return;
   }
 
@@ -360,9 +362,10 @@ async function handleNewChat(rawName: string, ctx: CommandContext): Promise<void
   }
 
   // Welcome the user inside the new group with a hint about how to start.
+  const m = msgs();
   const welcome = sourceCwd
-    ? `🎉 群已建好，cwd 继承自原群：\`${sourceCwd}\`\n\n@我 + 任意消息开始对话。`
-    : '🎉 群已建好。\n\n@我 + 任意消息开始对话。';
+    ? m.commands.newChatWelcomeWithCwd(sourceCwd)
+    : m.commands.newChatWelcome;
   try {
     await ctx.channel.send(created.chatId, { markdown: welcome });
   } catch (err) {
@@ -371,18 +374,18 @@ async function handleNewChat(rawName: string, ctx: CommandContext): Promise<void
 
   await reply(
     ctx,
-    `✓ 已创建群 **${created.name}**，去新群里继续。`,
+    m.commands.chatCreated(created.name),
   );
 }
 
 async function handleCd(args: string, ctx: CommandContext): Promise<void> {
   const input = args.trim();
   if (!input) {
-    await reply(ctx, '用法：`/cd <绝对路径>` 或 `/cd ~/xxx`');
+    await reply(ctx, msgs().commands.cdUsage);
     return;
   }
   if (!isAbsoluteOrTilde(input)) {
-    await reply(ctx, '请使用绝对路径，或 `~/xxx` 表示 home 下的子路径。');
+    await reply(ctx, msgs().commands.cdNeedAbsolutePath);
     return;
   }
   const absolute = expandTilde(input);
@@ -394,7 +397,7 @@ async function handleCd(args: string, ctx: CommandContext): Promise<void> {
   ctx.activeRuns.interrupt(ctx.scope);
   ctx.workspaces.setCwd(ctx.scope, workspace.cwdRealpath);
   ctx.sessions.clear(ctx.scope);
-  await reply(ctx, `✓ 已切换 cwd 到 \`${workspace.cwdRealpath}\`\n（session 已重置）`);
+  await reply(ctx, msgs().commands.cdSwitched(workspace.cwdRealpath));
 }
 
 async function handleWs(args: string, ctx: CommandContext): Promise<void> {
@@ -413,7 +416,7 @@ async function handleWs(args: string, ctx: CommandContext): Promise<void> {
     case 'rm':
       return handleWsRemove(name, ctx);
     default:
-      await reply(ctx, '用法：`/ws [list|save <name>|use <name>|remove <name>]`');
+      await reply(ctx, msgs().commands.wsUsage);
   }
 }
 
@@ -429,26 +432,26 @@ async function handleWsList(ctx: CommandContext): Promise<void> {
 
 async function handleWsSave(name: string, ctx: CommandContext): Promise<void> {
   if (!name) {
-    await reply(ctx, '用法：`/ws save <name>`');
+    await reply(ctx, msgs().commands.wsSaveUsage);
     return;
   }
   const cwd = effectiveWorkspaceCwd(ctx);
   if (!cwd) {
-    await reply(ctx, '当前 chat 未设置 cwd，先用 `/cd` 设置再保存。');
+    await reply(ctx, msgs().commands.wsSaveNoCwd);
     return;
   }
   ctx.workspaces.saveNamed(scopedWorkspaceName(ctx, name), cwd);
-  await reply(ctx, `✓ 工作目录别名已保存：\`${name}\` → ${cwd}`);
+  await reply(ctx, msgs().commands.wsSaved(name, cwd));
 }
 
 async function handleWsUse(name: string, ctx: CommandContext): Promise<void> {
   if (!name) {
-    await reply(ctx, '用法：`/ws use <name>`');
+    await reply(ctx, msgs().commands.wsUseUsage);
     return;
   }
   const cwd = getWorkspaceAlias(ctx, name);
   if (!cwd) {
-    await reply(ctx, `未找到工作目录别名：\`${name}\``);
+    await reply(ctx, msgs().commands.wsAliasNotFound(name));
     return;
   }
   const workspace = await resolveWorkingDirectory(cwd);
@@ -459,24 +462,24 @@ async function handleWsUse(name: string, ctx: CommandContext): Promise<void> {
   ctx.activeRuns.interrupt(ctx.scope);
   ctx.workspaces.setCwd(ctx.scope, workspace.cwdRealpath);
   ctx.sessions.clear(ctx.scope);
-  await reply(ctx, `✓ 已切换到 \`${name}\` (${workspace.cwdRealpath})\n（session 已重置）`);
+  await reply(ctx, msgs().commands.wsSwitched(name, workspace.cwdRealpath));
 }
 
 async function handleWsRemove(name: string, ctx: CommandContext): Promise<void> {
   if (!name) {
-    await reply(ctx, '用法：`/ws remove <name>`');
+    await reply(ctx, msgs().commands.wsRemoveUsage);
     return;
   }
   if (!removeWorkspaceAlias(ctx, name)) {
-    await reply(ctx, `未找到工作目录别名：\`${name}\``);
+    await reply(ctx, msgs().commands.wsAliasNotFound(name));
     return;
   }
-  await reply(ctx, `✓ 已删除工作目录别名：\`${name}\``);
+  await reply(ctx, msgs().commands.wsRemoved(name));
 }
 
 async function handleDoc(args: string, ctx: CommandContext): Promise<void> {
   void args;
-  await reply(ctx, '云文档评论现在不需要绑定工作区；在支持的文档评论里 @bot 即可触发回复。');
+  await reply(ctx, msgs().commands.docCommentInfo);
 }
 
 const WORKSPACE_NAME_SEPARATOR = '\u001f';
@@ -542,12 +545,12 @@ async function handleResume(args: string, ctx: CommandContext): Promise<void> {
 
   const cwd = selectedResumeCwd(ctx);
   if (!cwd) {
-    await reply(ctx, '请先使用 /cd <path> 选择工作目录，再查看或恢复会话。');
+    await reply(ctx, msgs().commands.resumeNeedCwd);
     return;
   }
 
   if (ctx.chatMode !== 'p2p') {
-    await reply(ctx, '群聊中不展示历史会话详情。请私聊 bot 使用 `/resume` 查看和选择历史会话。');
+    await reply(ctx, msgs().commands.resumeGroupHidden);
     return;
   }
 
@@ -575,10 +578,7 @@ async function handleResume(args: string, ctx: CommandContext): Promise<void> {
     }
     if (entry?.threadId && identity) {
       const nonce = issueResumeCandidate(identity, { threadId: entry.threadId });
-      await reply(
-        ctx,
-        `当前 Codex thread 可恢复。\n使用 \`/resume use ${nonce}\` 恢复（10 分钟内有效）。`,
-      );
+      await reply(ctx, msgs().commands.resumeCodexAvailable(nonce));
       return;
     }
     const card = resumeCard(cwd, []);
@@ -627,39 +627,39 @@ async function applyResume(sessionId: string, ctx: CommandContext): Promise<void
         });
         ctx.sessions.set(ctx.scope, resolved.sessionId!, ctx.sessionCatalogIdentity.cwdRealpath);
       }
-      await reply(ctx, RESUME_APPLIED_REPLY);
+      await reply(ctx, msgs().commands.resumeApplied);
       return;
     }
     if (ctx.sessionCatalogIdentity.agentId === 'codex') {
-      await reply(ctx, '当前上下文不可恢复这个会话，请先用 `/resume` 重新生成恢复候选。');
+      await reply(ctx, msgs().commands.resumeCodexCandidateInvalid);
       return;
     }
     const expected = entry?.sessionId;
     if (expected !== sessionId) {
-      await reply(ctx, '当前上下文不可恢复这个会话，请重新选择当前工作区和权限策略下的会话。');
+      await reply(ctx, msgs().commands.resumeContextMismatch);
       return;
     }
     ctx.activeRuns.interrupt(ctx.scope);
     if (ctx.sessionCatalogIdentity.agentId === 'claude') {
       ctx.sessions.set(ctx.scope, sessionId, ctx.sessionCatalogIdentity.cwdRealpath);
     }
-    await reply(ctx, RESUME_APPLIED_REPLY);
+    await reply(ctx, msgs().commands.resumeApplied);
     return;
   }
 
   if (ctx.controls.profileConfig.agentKind === 'codex') {
-    await reply(ctx, '当前上下文没有可恢复的 Codex thread，请先在当前工作区完成一次运行。');
+    await reply(ctx, msgs().commands.resumeNoCodexThread);
     return;
   }
 
   const cwd = selectedResumeCwd(ctx);
   if (!cwd) {
-    await reply(ctx, '请先使用 /cd <path> 选择工作目录，再查看或恢复会话。');
+    await reply(ctx, msgs().commands.resumeNeedCwd);
     return;
   }
   ctx.activeRuns.interrupt(ctx.scope);
   ctx.sessions.set(ctx.scope, sessionId, cwd);
-  await reply(ctx, RESUME_APPLIED_REPLY);
+  await reply(ctx, msgs().commands.resumeApplied);
 }
 
 function issueResumeCandidate(
@@ -815,7 +815,7 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
     profileName: ctx.controls.profile,
     cwd,
     sessionId: isCodex ? catalogEntry?.threadId : sess?.sessionId,
-    emptySessionText: isCodex ? '(未建立)' : undefined,
+    emptySessionText: isCodex ? msgs().commands.statusSessionNotEstablished : undefined,
     sessionStale: !isCodex && Boolean(cwd && sess && sess.cwd !== cwd),
     agentName: ctx.agent.displayName,
     runtimeAccess: runtimeAccessStatus(ctx.controls.profileConfig),
@@ -842,7 +842,7 @@ function formatOwnerState(ctx: CommandContext): string {
 async function handleStop(args: string, ctx: CommandContext): Promise<void> {
   const targetScope = args.trim();
   if (targetScope && !canRunAdminCommand(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId).ok) {
-    await reply(ctx, '❌ 指定 scope 停止任务仅管理员可用。');
+    await reply(ctx, msgs().commands.stopScopeAdminOnly);
     return;
   }
   const scope = targetScope || ctx.scope;
@@ -853,11 +853,10 @@ async function handleStop(args: string, ctx: CommandContext): Promise<void> {
     interrupted: ok,
   });
   if (targetScope) {
+    const m = msgs();
     await reply(
       ctx,
-      ok
-        ? `已请求停止 \`${scope}\`。`
-        : `未找到正在运行的任务：\`${scope}\`。`,
+      ok ? m.commands.stopRequested(scope) : m.commands.stopNotFound(scope),
     );
   }
   // No reply for the current IM scope: if there was a run, its in-flight
@@ -871,29 +870,29 @@ async function handleTimeout(args: string, ctx: CommandContext): Promise<void> {
     parsed.targeted &&
     !canRunAdminCommand(ctx.controls.profileConfig, ctx.controls, ctx.msg.senderId).ok
   ) {
-    await reply(ctx, '❌ 指定 scope 设置 timeout 仅管理员可用。');
+    await reply(ctx, msgs().commands.timeoutScopeAdminOnly);
     return;
   }
+  const m = msgs();
   const scope = parsed.scope;
   const value = parsed.value;
   const globalMs = getRunIdleTimeoutMs(ctx.controls.cfg);
   const globalMinutes = globalMs ? Math.round(globalMs / 60_000) : 0;
   const formatGlobal = (): string =>
-    globalMinutes > 0 ? `${globalMinutes} 分钟` : '未启用';
+    globalMinutes > 0 ? m.commands.timeoutMinutes(globalMinutes) : m.commands.timeoutGlobalDisabled;
 
   // /timeout — show effective value + source
   if (!value) {
     const scopeMinutes = ctx.sessions.getIdleTimeoutMinutes(scope);
-    const usage =
-      '\n\n用法:\n- `/timeout 15` 当前 session 设 15 分钟\n- `/timeout off` 当前 session 关闭探活\n- `/timeout default` 清除 session 覆盖,回退全局\n- `/timeout comment:<scopeHash> 15` 管理员设置 comment scope\n\n_注:`/new` 会清掉当前 session 的覆盖,回到全局_';
+    const usage = m.commands.timeoutUsage;
     const scopeLabel = parsed.targeted ? ` (${scope})` : '';
     if (scopeMinutes !== undefined) {
       const effective =
-        scopeMinutes > 0 ? `${scopeMinutes} 分钟` : '已关闭（当前 session）';
-      await reply(ctx, `⏱ 当前 session${scopeLabel} 探活:${effective}\n全局默认:${formatGlobal()}${usage}`);
+        scopeMinutes > 0 ? m.commands.timeoutMinutes(scopeMinutes) : m.commands.timeoutOffForSession;
+      await reply(ctx, `${m.commands.timeoutStatusOverride(scopeLabel, effective, formatGlobal())}${usage}`);
       return;
     }
-    await reply(ctx, `⏱ 当前 session${scopeLabel} 探活:跟随全局(${formatGlobal()})${usage}`);
+    await reply(ctx, `${m.commands.timeoutStatusGlobal(scopeLabel, formatGlobal())}${usage}`);
     return;
   }
 
@@ -903,8 +902,8 @@ async function handleTimeout(args: string, ctx: CommandContext): Promise<void> {
     await reply(
       ctx,
       cleared
-        ? `✅ 已清除 session 覆盖,回退到全局(${formatGlobal()})。`
-        : `当前 session 本来就没设过覆盖,跟随全局(${formatGlobal()})。`,
+        ? m.commands.timeoutCleared(formatGlobal())
+        : m.commands.timeoutNoOverride(formatGlobal()),
     );
     return;
   }
@@ -912,18 +911,18 @@ async function handleTimeout(args: string, ctx: CommandContext): Promise<void> {
   if (value === 'off' || value === '0') {
     ctx.sessions.setIdleTimeoutMinutes(scope, 0);
     log.info('command', 'timeout-off', { scope, targeted: parsed.targeted });
-    await reply(ctx, '✅ 已关闭当前 session 的探活。');
+    await reply(ctx, m.commands.timeoutDisabled);
     return;
   }
 
   const n = Number.parseInt(value, 10);
   if (!Number.isFinite(n) || n < 1 || n > 120) {
-    await reply(ctx, '❌ 用法:`/timeout <1-120>` / `/timeout off` / `/timeout default`');
+    await reply(ctx, m.commands.timeoutInvalid);
     return;
   }
   ctx.sessions.setIdleTimeoutMinutes(scope, n);
   log.info('command', 'timeout-set', { scope, minutes: n, targeted: parsed.targeted });
-  await reply(ctx, `✅ 当前 session 探活已设为 ${n} 分钟。`);
+  await reply(ctx, m.commands.timeoutSet(n));
 }
 
 function parseTimeoutTarget(input: string, currentScope: string): {
@@ -950,51 +949,49 @@ function parseTimeoutTarget(input: string, currentScope: string): {
 async function handlePs(_args: string, ctx: CommandContext): Promise<void> {
   const live = readAndPrune();
   log.info('command', 'ps', { count: live.length });
+  const m = msgs();
   if (live.length === 0) {
-    await reply(ctx, '当前没有 bot 在运行(理论上不可能,你正在跟其中之一对话…)');
+    await reply(ctx, m.commands.psNoBots);
     return;
   }
 
   const rows: string[] = [
-    '| # | ID | Bot | 启动 |',
+    m.commands.psTableHeader,
     '|---|---|---|---|',
   ];
   for (const [idx, e] of live.entries()) {
     const ago = formatAgo(Date.now() - new Date(e.startedAt).getTime());
-    const me = e.id === ctx.controls.processId ? ' ← 当前正在回复' : '';
+    const me = e.id === ctx.controls.processId ? m.commands.psCurrentMarker : '';
     const bot = e.botName ? `${e.botName} (\`${e.appId}\`)` : `\`${e.appId}\``;
     rows.push(`| ${idx + 1} | \`${e.id}\`${me} | ${bot} | ${ago} |`);
   }
   const body = [
-    `🧭 **当前有 ${live.length} 个 bot 在运行**`,
+    m.commands.psTitle(live.length),
     '',
     rows.join('\n'),
     '',
-    '用 `/exit <id|#>` 关掉某一个;`/exit ' + ctx.controls.processId + '` 关掉正在回复你的这个 bot。',
+    m.commands.psFooter(ctx.controls.processId),
   ].join('\n');
   await reply(ctx, body);
 }
 
 async function handleExit(args: string, ctx: CommandContext): Promise<void> {
   const target = args.trim();
+  const m = msgs();
   if (!target) {
-    await reply(
-      ctx,
-      '用法:`/exit <id|#>` —— `id` 是 `/ps` 显示的短 id,`#` 是序号。\n' +
-        `当前正在回复你的是 \`${ctx.controls.processId}\`。`,
-    );
+    await reply(ctx, m.commands.exitUsage(ctx.controls.processId));
     return;
   }
   const entry = resolveTarget(target);
   if (!entry) {
-    await reply(ctx, `❌ 没找到匹配的 bot:\`${target}\`。发 \`/ps\` 看可选目标。`);
+    await reply(ctx, m.commands.exitNotFound(target));
     return;
   }
 
   // Targeting ourselves — graceful disconnect + process.exit(0) via controls.
   if (entry.id === ctx.controls.processId) {
     log.info('command', 'exit-self', { id: entry.id });
-    await reply(ctx, `👋 即将关闭当前 bot \`${entry.id}\`,再见。`);
+    await reply(ctx, m.commands.exitSelf(entry.id));
     // Detach to give the reply send a chance to complete before we tear
     // down. controls.exit() awaits disconnect then process.exit().
     void (async () => {
@@ -1011,33 +1008,32 @@ async function handleExit(args: string, ctx: CommandContext): Promise<void> {
   try {
     process.kill(entry.pid, 'SIGTERM');
   } catch (err) {
-    await reply(ctx, `❌ 关掉 bot \`${entry.id}\` 失败:${(err as Error).message}`);
+    await reply(ctx, m.commands.exitFailed(entry.id, (err as Error).message));
     return;
   }
   // Brief grace before reporting.
   await new Promise((r) => setTimeout(r, 500));
   const stillAlive = isAlive(entry.pid);
   if (stillAlive) {
-    await reply(
-      ctx,
-      `📨 已请求关闭 \`${entry.id}\`,但还在收尾。再发 \`/ps\` 复查一下。`,
-    );
+    await reply(ctx, m.commands.exitPending(entry.id));
   } else {
-    await reply(ctx, `✓ 已关闭 bot \`${entry.id}\`。`);
+    await reply(ctx, m.commands.exitClosed(entry.id));
   }
 }
 
 function formatAgo(ms: number): string {
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s 前`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m 前`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h 前`;
-  return `${Math.floor(ms / 86_400_000)}d 前`;
+  const m = msgs();
+  if (ms < 60_000) return m.commands.agoSeconds(Math.floor(ms / 1000));
+  if (ms < 3_600_000) return m.commands.agoMinutes(Math.floor(ms / 60_000));
+  if (ms < 86_400_000) return m.commands.agoHours(Math.floor(ms / 3_600_000));
+  return m.commands.agoDays(Math.floor(ms / 86_400_000));
 }
 
 async function handleReconnect(args: string, ctx: CommandContext): Promise<void> {
   const wait = args.trim().split(/\s+/).filter(Boolean).includes('--wait');
   log.info('command', 'reconnect', { wait });
-  await reply(ctx, wait ? '⏳ 将在当前运行结束后重连…' : '⏳ 正在停止当前运行并重连…');
+  const m = msgs();
+  await reply(ctx, wait ? m.commands.reconnectAfterRun : m.commands.reconnectNow);
   let resumeNewRuns: (() => void) | undefined;
   try {
     resumeNewRuns = ctx.activeRuns.pauseNewRuns('reconnect-in-progress');
@@ -1051,7 +1047,7 @@ async function handleReconnect(args: string, ctx: CommandContext): Promise<void>
   } catch (err) {
     log.fail('command', err, { step: 'reconnect' });
     reportMetric('command_fail', 1, { step: 'reconnect' });
-    await reply(ctx, `❌ 重连失败:${err instanceof Error ? err.message : String(err)}`);
+    await reply(ctx, msgs().commands.reconnectFailed(err instanceof Error ? err.message : String(err)));
   } finally {
     resumeNewRuns?.();
   }
@@ -1073,7 +1069,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
   const now = Date.now();
   const last = doctorLastByOperator.get(rateKey);
   if (last !== undefined && now - last < DOCTOR_RATE_LIMIT_MS) {
-    await reply(ctx, 'doctor rate limited: 同一用户 30 秒内只能触发一次。');
+    await reply(ctx, msgs().commands.doctorRateLimited);
     return;
   }
 
@@ -1082,8 +1078,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
     await reply(
       ctx,
       buildDoctorReport(ctx, {
-        workspaceCheck:
-          '未设置工作目录。先用 `/cd <path>` 或 `/ws use <name>` 选择工作目录后再运行 agent echo check。',
+        workspaceCheck: msgs().commands.doctorNoWorkspace,
         echoCheck: 'skipped',
       }),
     );
@@ -1095,7 +1090,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
     await reply(
       ctx,
       buildDoctorReport(ctx, {
-        workspaceCheck: `${workspace.userVisible} 工作目录不可用时只执行 self-check，不启动 agent。`,
+        workspaceCheck: msgs().commands.doctorWorkspaceUnavailable(workspace.userVisible),
         echoCheck: 'skipped',
       }),
     );
@@ -1115,7 +1110,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
 
   const profileKey = ctx.controls.profile;
   if (doctorInFlightProfiles.has(profileKey)) {
-    await reply(ctx, 'doctor in-flight: 当前 profile 已有诊断运行中。');
+    await reply(ctx, msgs().commands.doctorInFlight);
     return;
   }
   doctorLastByOperator.set(rateKey, now);
@@ -1167,7 +1162,7 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
   // open_id (Lark auto-opens the p2p chat with the bot).
   const isP2p = ctx.chatMode === 'p2p';
   if (!isP2p) {
-    await reply(ctx, '🔍 已收到诊断请求，分析结果将私信发给你。');
+    await reply(ctx, msgs().commands.doctorAck);
   }
 
   doctorInFlightProfiles.add(profileKey);
@@ -1294,7 +1289,7 @@ function buildDoctorReport(
     'self-check: ok',
     `profile: ${ctx.controls.profile}`,
     `agent: ${ctx.agent.displayName} (${ctx.controls.profileConfig.agentKind})`,
-    `workspace: ${cwd ?? '(未设置)'}`,
+    `workspace: ${cwd ?? msgs().commands.doctorWorkspaceUnset}`,
     `workspace default: ${ctx.controls.profileConfig.workspaces.default ? 'set' : 'missing'}`,
     `${runtimeAccess.label}: ${runtimeAccess.value}`,
     `access: ${access.ok ? 'ok' : 'denied'} (${access.reason})`,
@@ -1341,7 +1336,7 @@ async function handleAccount(args: string, ctx: CommandContext): Promise<void> {
     case 'cancel':
       return cancelAccount(ctx);
     default:
-      await reply(ctx, '用法：`/account` 或 `/account change`');
+      await reply(ctx, msgs().commands.accountUsage);
   }
 }
 
@@ -1436,7 +1431,7 @@ async function submitAccount(ctx: CommandContext): Promise<void> {
     };
 
     if (!appId || !appSecret) {
-      await finishFailure('App ID 或 App Secret 为空');
+      await finishFailure(msgs().commands.accountEmptyCredentials);
       return;
     }
 
@@ -1462,7 +1457,7 @@ async function submitAccount(ctx: CommandContext): Promise<void> {
       await saveAccountConfig(ctx, newCfg, appSecret);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      await finishFailure(`保存凭据失败：${msg}`);
+      await finishFailure(msgs().commands.accountSaveFailed(msg));
       return;
     }
 
@@ -1517,10 +1512,11 @@ async function handleInvite(args: string, ctx: CommandContext): Promise<void> {
         allowedChats: [...list],
       };
     });
+    const m = msgs();
     if (knownChats.length === 0) {
-      await reply(ctx, '当前 bot 还不在任何群里，没有可加入的群。');
+      await reply(ctx, m.commands.inviteNoKnownChats);
     } else {
-      await reply(ctx, `✅ 已把 bot 所在的 ${added} 个群加入响应群名单（共 ${total} 个）。`);
+      await reply(ctx, m.commands.inviteAllGroupsAdded(added, total));
     }
     return;
   }
@@ -1531,20 +1527,13 @@ async function handleInvite(args: string, ctx: CommandContext): Promise<void> {
     | 'group'
     | undefined;
   if (!kind) {
-    await reply(
-      ctx,
-      '用法：\n' +
-        '• `/invite user @某人` — 加入允许私聊\n' +
-        '• `/invite admin @某人` — 加入管理员\n' +
-        '• `/invite group` — 把当前群加入响应群名单\n' +
-        '• `/invite all group` — 把 bot 所在的所有群一键加入',
-    );
+    await reply(ctx, msgs().commands.inviteUsage);
     return;
   }
 
   if (kind === 'group') {
     if (ctx.chatMode === 'p2p') {
-      await reply(ctx, '❌ `/invite group` 只能在群里发，在私聊里没有 chat_id 可以加。');
+      await reply(ctx, msgs().commands.inviteGroupInP2p);
       return;
     }
     const chatId = ctx.msg.chatId;
@@ -1558,20 +1547,18 @@ async function handleInvite(args: string, ctx: CommandContext): Promise<void> {
         allowedChats: [...list],
       };
     });
+    const m = msgs();
     if (already) {
-      await reply(ctx, '✅ 当前群已在白名单里，无需重复添加。');
+      await reply(ctx, m.commands.inviteGroupAlready);
       return;
     }
-    await reply(ctx, `✅ 已把当前群（\`${chatId}\`）加入响应群名单。`);
+    await reply(ctx, m.commands.inviteGroupAdded(chatId));
     return;
   }
 
   const targets = mentionTargets(ctx);
   if (targets.length === 0) {
-    await reply(
-      ctx,
-      `❌ 没检测到 @ 的用户。请像这样发：\`/invite ${kind} @某人\`（注意 @ 用户不是 @ bot）。`,
-    );
+    await reply(ctx, msgs().commands.inviteNoMention(kind));
     return;
   }
 
@@ -1595,10 +1582,11 @@ async function handleInvite(args: string, ctx: CommandContext): Promise<void> {
       [listKey]: [...list],
     };
   });
-  const label = kind === 'user' ? '用户白名单' : '管理员';
+  const m = msgs();
+  const label = kind === 'user' ? m.commands.accessLabelUsers : m.commands.accessLabelAdmins;
   const parts: string[] = [];
-  if (added.length > 0) parts.push(`✅ 已把 ${added.join('、')} 加入${label}。`);
-  if (already.length > 0) parts.push(`_${already.join('、')} 已经在${label}里，跳过。_`);
+  if (added.length > 0) parts.push(m.commands.inviteAdded(added, label));
+  if (already.length > 0) parts.push(m.commands.inviteAlreadyIn(already, label));
   await reply(ctx, parts.join('\n'));
 }
 
@@ -1610,19 +1598,13 @@ async function handleRemove(args: string, ctx: CommandContext): Promise<void> {
     | 'group'
     | undefined;
   if (!kind) {
-    await reply(
-      ctx,
-      '用法：\n' +
-        '• `/remove user @某人` — 移出用户白名单\n' +
-        '• `/remove admin @某人` — 移出管理员\n' +
-        '• `/remove group` — 把当前群移出响应群名单',
-    );
+    await reply(ctx, msgs().commands.removeUsage);
     return;
   }
 
   if (kind === 'group') {
     if (ctx.chatMode === 'p2p') {
-      await reply(ctx, '`/remove group` 请在要移除的群里发，私聊里没有可移除的群。');
+      await reply(ctx, msgs().commands.removeGroupInP2p);
       return;
     }
     const chatId = ctx.msg.chatId;
@@ -1636,17 +1618,18 @@ async function handleRemove(args: string, ctx: CommandContext): Promise<void> {
         allowedChats: [...list],
       };
     });
+    const m = msgs();
     if (missing) {
-      await reply(ctx, '✅ 当前群本来就不在响应名单里，无需移除。');
+      await reply(ctx, m.commands.removeGroupNotIn);
       return;
     }
-    await reply(ctx, '✅ 已把当前群移出响应群名单。');
+    await reply(ctx, m.commands.removeGroupDone);
     return;
   }
 
   const targets = mentionTargets(ctx);
   if (targets.length === 0) {
-    await reply(ctx, `请 @ 上要移除的人，例如：\`/remove ${kind} @某人\`。`);
+    await reply(ctx, msgs().commands.removeNoMention(kind));
     return;
   }
 
@@ -1670,10 +1653,11 @@ async function handleRemove(args: string, ctx: CommandContext): Promise<void> {
       [listKey]: [...list],
     };
   });
-  const label = kind === 'user' ? '用户白名单' : '管理员';
+  const m = msgs();
+  const label = kind === 'user' ? m.commands.accessLabelUsers : m.commands.accessLabelAdmins;
   const parts: string[] = [];
-  if (removed.length > 0) parts.push(`✅ 已把 ${removed.join('、')} 移出${label}。`);
-  if (notThere.length > 0) parts.push(`${notThere.join('、')} 本来就不在${label}里，无需移除。`);
+  if (removed.length > 0) parts.push(m.commands.removeRemoved(removed, label));
+  if (notThere.length > 0) parts.push(m.commands.removeNotThere(notThere, label));
   await reply(ctx, parts.join('\n'));
 }
 
@@ -1704,18 +1688,12 @@ async function handleMention(args: string, ctx: CommandContext): Promise<void> {
           : rawMode;
 
   if (!wantsGroup || (mode !== 'on' && mode !== 'off' && mode !== 'default')) {
-    await reply(
-      ctx,
-      '用法：\n' +
-        '• `/mention group on` — 当前群必须 @bot 才触发\n' +
-        '• `/mention group off` — 当前群设为专属群免 @（普通消息也触发，不建议多 bot 群开启）\n' +
-        '• `/mention group default` — 当前群跟随 `/config` 的全局设置',
-    );
+    await reply(ctx, msgs().commands.mentionUsage);
     return;
   }
 
   if (ctx.chatMode === 'p2p') {
-    await reply(ctx, '`/mention group` 请在要设置的群里发，私聊里没有群策略可改。');
+    await reply(ctx, msgs().commands.mentionGroupInP2p);
     return;
   }
 
@@ -1736,22 +1714,20 @@ async function handleMention(args: string, ctx: CommandContext): Promise<void> {
     };
   });
 
+  const m = msgs();
   if (mode === 'default') {
     await reply(
       ctx,
-      `✅ 当前群已恢复为跟随全局设置（全局默认）：${effective ? '需要 @bot' : '专属群免 @'}。`,
+      m.commands.mentionResetToDefault(
+        effective ? m.commands.mentionRequireLabel : m.commands.mentionExemptShort,
+      ),
     );
     return;
   }
 
-  const label = effective ? '需要 @bot' : '专属群免 @（普通消息也会触发）';
-  const warning = effective
-    ? ''
-    : '\n\n⚠️ 如果这个群里有多个 bot，不建议开启免 @，否则普通消息可能让多个 bot 同时响应。';
-  await reply(
-    ctx,
-    `✅ 当前群已设置为：${label}。这只影响当前群，不修改 /config 的全局默认值。${warning}`,
-  );
+  const label = effective ? m.commands.mentionRequireLabel : m.commands.mentionExemptLabel;
+  const warning = effective ? '' : m.commands.mentionMultiBotWarning;
+  await reply(ctx, m.commands.mentionSet(label, warning));
   if (!effective) {
     await promptGroupMsgScopeIfMissing(ctx);
   }
@@ -1820,7 +1796,7 @@ async function handleConfig(args: string, ctx: CommandContext): Promise<void> {
     case 'cancel':
       return cancelConfig(ctx);
     default:
-      await reply(ctx, '用法:`/config`');
+      await reply(ctx, msgs().commands.configUsage);
   }
 }
 
@@ -1836,7 +1812,9 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
 
   const ms = getRunIdleTimeoutMs(ctx.controls.cfg);
   const access = ctx.controls.profileConfig.access;
-  const card = configFormCard({
+  // Assembled in a variable (not an inline literal) so the extra `language`
+  // key stays compatible whether or not ConfigFormOpts declares it yet.
+  const formOpts = {
     messageReply: getMessageReplyMode(ctx.controls.cfg),
     showToolCalls: getShowToolCalls(ctx.controls.cfg),
     cotMessages: getCotMessages(ctx.controls.cfg),
@@ -1849,7 +1827,10 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
     allowedChats: access.allowedChats,
     admins: access.admins,
     knownChats: ctx.controls.knownChats ?? [],
-  });
+    /** Current UI language, shown in the config card. */
+    language: getLanguage(ctx.controls.cfg),
+  };
+  const card = configFormCard(formOpts);
   if (ctx.fromCardAction) await recallMessage(ctx, ctx.msg.messageId);
   await sendManagedCard(ctx.channel, ctx.msg.chatId, card);
 }
@@ -1930,6 +1911,10 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
     rawLarkCliIdentity === 'user-default' || rawLarkCliIdentity === 'bot-only'
       ? rawLarkCliIdentity
       : ctx.controls.profileConfig.larkCli.identityPreset;
+  // Parse language ('zh-CN' | 'en-US', loose forms like 'zh'/'en' accepted).
+  // Missing / unrecognized keeps the current preference.
+  const language =
+    normalizeLocale(String(fv.language ?? '').trim()) ?? getLanguage(ctx.controls.cfg);
   const previousLarkCliIdentity = ctx.controls.profileConfig.larkCli.identityPreset;
   const larkCliIdentityChanged = larkCliIdentity !== previousLarkCliIdentity;
 
@@ -1961,6 +1946,7 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
       maxConcurrentRuns,
       runIdleTimeoutMinutes,
       requireMentionInGroup,
+      language,
     };
 
     let failureStep = 'config.save';
@@ -1976,6 +1962,10 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
         failureStep = 'config.save';
       }
       await savePreferencesConfig(ctx, nextPreferences, requireMentionInGroup, larkCliIdentity);
+      // Language preference is ambient — activate it immediately so every
+      // string rendered from here on (including the saved-config card)
+      // follows the new locale without a restart.
+      setActiveLocale(getLanguage(ctx.controls.cfg));
     } catch (err) {
       let rollbackFailed = false;
       if (larkCliIdentityChanged) {
@@ -2006,29 +1996,30 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
       runIdleTimeoutMinutes,
       requireMentionInGroup,
       larkCliIdentity,
+      language,
       allowedUsersCount: access.allowedUsers.length,
       allowedChatsCount: access.allowedChats.length,
       adminsCount: access.admins.length,
     });
     await waitForSettle();
-    await showResultCardInPlace(
-      ctx,
-      formMsgId,
-      configSavedCard({
-        messageReply,
-        showToolCalls,
-        cotMessages,
-        maxConcurrentRuns,
-        runIdleTimeoutMinutes,
-        requireMentionInGroup,
-        requireMentionInGroupOverrides: access.requireMentionInGroupOverrides,
-        larkCliIdentity,
-        allowedUsers: access.allowedUsers,
-        allowedChats: access.allowedChats,
-        admins: access.admins,
-        knownChats: ctx.controls.knownChats ?? [],
-      }),
-    );
+    // Variable (not inline literal) for the same reason as in showConfigForm:
+    // keeps the extra `language` key compatible with ConfigFormOpts.
+    const savedOpts = {
+      messageReply,
+      showToolCalls,
+      cotMessages,
+      maxConcurrentRuns,
+      runIdleTimeoutMinutes,
+      requireMentionInGroup,
+      requireMentionInGroupOverrides: access.requireMentionInGroupOverrides,
+      larkCliIdentity,
+      allowedUsers: access.allowedUsers,
+      allowedChats: access.allowedChats,
+      admins: access.admins,
+      knownChats: ctx.controls.knownChats ?? [],
+      language,
+    };
+    await showResultCardInPlace(ctx, formMsgId, configSavedCard(savedOpts));
 
     // "群里不需要 @ bot" only works if the app can actually receive non-@
     // group messages (`im:message.group_msg`). When the user opts in, verify
@@ -2092,16 +2083,17 @@ async function promptGroupMsgScopeIfMissing(ctx: CommandContext): Promise<void> 
 }
 
 function configFailureMessage(step: string, rollbackFailed: boolean, larkCliPolicyApplied: boolean): string {
+  const m = msgs();
   if (rollbackFailed) {
-    return '保存失败，且 lark-cli 身份策略回滚失败。请执行 /status 检查当前状态。';
+    return m.commands.configFailRollbackFailed;
   }
   if (larkCliPolicyApplied && step === 'config.save') {
-    return '保存失败，lark-cli 身份策略已回滚。请重新打开 /config 确认当前状态。';
+    return m.commands.configFailRolledBack;
   }
   if (step === 'config.lark-cli-policy') {
-    return 'lark-cli 身份策略未生效，未做任何修改。';
+    return m.commands.configFailPolicyNotApplied;
   }
-  return '配置未写入，未做任何修改。';
+  return m.commands.configFailNotWritten;
 }
 
 function commandProfilePaths(ctx: CommandContext) {

@@ -1,4 +1,5 @@
 import type { Block, RunState, ToolEntry } from './run-state';
+import { msgs } from '../i18n';
 import { toolHeaderText } from './tool-render';
 
 /**
@@ -19,13 +20,14 @@ export function renderText(state: RunState): string {
     if (piece) parts.push(piece);
   }
 
+  const m = msgs().cards;
   if (state.terminal === 'interrupted') {
-    parts.push('_⏹ 已被中断_');
+    parts.push(m.interruptedNote);
   } else if (state.terminal === 'idle_timeout') {
     const mins = state.idleTimeoutMinutes ?? 0;
-    parts.push(`_⏱ ${mins} 分钟无响应,已自动终止_`);
+    parts.push(m.idleTimeoutNote(mins));
   } else if (state.terminal === 'error' && state.errorMsg) {
-    parts.push(`⚠️ agent 失败:${state.errorMsg}`);
+    parts.push(m.agentFailedText(state.errorMsg));
   } else if (state.terminal === 'running' && state.footer) {
     parts.push(footerLine(state.footer));
   }
@@ -51,7 +53,8 @@ function toolLine(tool: ToolEntry): string {
 }
 
 function footerLine(status: 'thinking' | 'tool_running' | 'streaming'): string {
-  if (status === 'thinking') return '_🧠 正在思考…_';
-  if (status === 'tool_running') return '_🧰 正在调用工具…_';
-  return '_✍️ 正在输出…_';
+  const m = msgs().cards;
+  if (status === 'thinking') return m.footerThinkingText;
+  if (status === 'tool_running') return m.footerToolRunningText;
+  return m.footerStreamingText;
 }

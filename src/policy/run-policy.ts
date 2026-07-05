@@ -8,6 +8,7 @@ import {
   type CodexSandboxMode,
 } from '../config/permissions';
 import type { ProfileConfig } from '../config/profile-schema';
+import { msgs } from '../i18n';
 import type { AccessDecision } from './access';
 import {
   accessPolicyDigest,
@@ -88,11 +89,11 @@ const DEFAULT_TTL_MS = 5 * 60 * 1000;
 
 export function evaluateRunPolicy(input: RunPolicyInput): RunPolicyResult {
   if (!input.access.ok) {
-    return reject('access-denied', '当前用户无权发起运行。');
+    return reject('access-denied', msgs().policy.accessDenied);
   }
 
   if (input.scope.resourceBindings?.some((binding) => binding.kind === 'folder' && !binding.verified)) {
-    return reject('folder-allowlist-unverified', '暂不支持 folder allowlist，已拒绝运行。');
+    return reject('folder-allowlist-unverified', msgs().policy.folderAllowlistUnverified);
   }
 
   if (
@@ -101,7 +102,7 @@ export function evaluateRunPolicy(input: RunPolicyInput): RunPolicyResult {
         attachment.requiredness === 'required' && attachment.decision !== 'accepted',
     )
   ) {
-    return reject('required-attachment-rejected', '必需附件未通过校验，已拒绝运行。');
+    return reject('required-attachment-rejected', msgs().policy.requiredAttachmentRejected);
   }
 
   const accessMode = clampAccess(

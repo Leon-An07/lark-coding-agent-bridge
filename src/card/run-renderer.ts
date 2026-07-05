@@ -1,4 +1,5 @@
 import type { Block, FooterStatus, RunState, ToolEntry } from './run-state';
+import { msgs } from '../i18n';
 import { toolBodyMd, toolHeaderText } from './tool-render';
 
 const REASONING_MAX = 1500;
@@ -35,15 +36,16 @@ export function renderCard(state: RunState, options: RunCardRenderOptions = {}):
     }
   }
 
+  const m = msgs().cards;
   if (state.terminal === 'interrupted') {
-    elements.push(noteMd('_⏹ 已被中断_'));
+    elements.push(noteMd(m.interruptedNote));
   } else if (state.terminal === 'idle_timeout') {
     const mins = state.idleTimeoutMinutes ?? 0;
-    elements.push(noteMd(`_⏱ ${mins} 分钟无响应,已自动终止_`));
+    elements.push(noteMd(m.idleTimeoutNote(mins)));
   } else if (state.terminal === 'error' && state.errorMsg) {
-    elements.push(noteMd(`⚠️ agent 失败：${state.errorMsg}`));
+    elements.push(noteMd(m.agentFailedCard(state.errorMsg)));
   } else if (state.terminal === 'done' && elements.length === 0) {
-    elements.push(noteMd('_（未返回内容）_'));
+    elements.push(noteMd(m.noContentNote));
   }
 
   if (state.terminal !== 'running') {
@@ -100,7 +102,8 @@ function renderToolGroup(tools: ToolEntry[], finalized: boolean): object[] {
 }
 
 function reasoningPanel(content: string, active: boolean): object {
-  const title = active ? '🧠 **思考中**' : '🧠 **思考完成，点击查看**';
+  const m = msgs().cards;
+  const title = active ? m.reasoningActive : m.reasoningDone;
   return collapsiblePanel({
     title,
     expanded: active,
@@ -114,7 +117,7 @@ function toolPanel(tool: ToolEntry, expanded: boolean): object {
     title: toolHeaderText(tool),
     expanded,
     border: tool.status === 'error' ? 'red' : 'grey',
-    body: toolBodyMd(tool) || '_无输出_',
+    body: toolBodyMd(tool) || msgs().cards.noToolOutput,
   });
 }
 
@@ -131,8 +134,7 @@ function toolPanel(tool: ToolEntry, expanded: boolean): object {
  * `toolPanel(latest, true)` so live observation isn't sacrificed.
  */
 function collapsedToolSummary(tools: ToolEntry[], finalized: boolean): object {
-  const suffix = finalized ? '（已结束）' : '';
-  const title = `☕ **${tools.length} 个工具调用${suffix}**`;
+  const title = msgs().cards.toolSummaryTitle(tools.length, finalized);
   const headerList = tools.map((t) => `- ${toolHeaderText(t)}`).join('\n');
   return {
     tag: 'collapsible_panel',
@@ -224,30 +226,32 @@ function stopButton(options: RunCardRenderOptions): object {
   }
   return {
     tag: 'button',
-    text: { tag: 'plain_text', content: '⏹ 终止' },
+    text: { tag: 'plain_text', content: msgs().cards.stopBtn },
     type: 'danger',
     behaviors: [{ type: 'callback', value }],
   };
 }
 
 function footerStatus(status: Exclude<FooterStatus, null>): object {
+  const m = msgs().cards;
   const text =
     status === 'thinking'
-      ? '🧠 正在思考'
+      ? m.footerThinking
       : status === 'tool_running'
-        ? '🧰 正在调用工具'
-        : '✍️ 正在输出';
+        ? m.footerToolRunning
+        : m.footerStreaming;
   return noteMd(text);
 }
 
 function summaryText(state: RunState): string {
-  if (state.terminal === 'interrupted') return '已中断';
-  if (state.terminal === 'idle_timeout') return '已超时';
-  if (state.terminal === 'error') return '出错';
-  if (state.terminal === 'done') return '已完成';
-  if (state.footer === 'tool_running') return '正在调用工具';
-  if (state.footer === 'streaming') return '正在输出';
-  return '思考中';
+  const m = msgs().cards;
+  if (state.terminal === 'interrupted') return m.summaryInterrupted;
+  if (state.terminal === 'idle_timeout') return m.summaryTimeout;
+  if (state.terminal === 'error') return m.summaryError;
+  if (state.terminal === 'done') return m.doneLabel;
+  if (state.footer === 'tool_running') return m.summaryToolRunning;
+  if (state.footer === 'streaming') return m.summaryStreaming;
+  return m.summaryThinking;
 }
 
 function truncate(s: string, max: number): string {

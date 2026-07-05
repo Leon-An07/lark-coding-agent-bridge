@@ -37,7 +37,8 @@ import {
 } from '../config/profile-schema';
 import { permissionsToLegacySandbox } from '../config/permissions';
 import type { AppConfig, SecretInput, TenantBrand } from '../config/schema';
-import { isComplete, isSecretRef, secretKeyForApp } from '../config/schema';
+import { getLanguage, isComplete, isSecretRef, secretKeyForApp } from '../config/schema';
+import { msgs, normalizeLocale, setActiveLocale } from '../i18n';
 import { resolveAppSecret } from '../config/secret-resolver';
 import {
   buildEncryptedAccountConfig,
@@ -93,7 +94,27 @@ export function createRuntimeProfileConfig(
   });
 }
 
+/**
+ * Central CLI locale bootstrap: every command that resolves a profile
+ * runtime inherits the configured language without per-command wiring.
+ * When the config can't be loaded (absent / incomplete), fall back to the
+ * user's LANG environment if it maps to a supported locale.
+ */
 export async function resolveProfileRuntime(
+  opts: ResolveProfileRuntimeOptions,
+): Promise<ProfileRuntime> {
+  try {
+    const runtime = await resolveProfileRuntimeInner(opts);
+    setActiveLocale(getLanguage(runtime.cfg));
+    return runtime;
+  } catch (err) {
+    const envLocale = normalizeLocale(process.env.LANG);
+    if (envLocale) setActiveLocale(envLocale);
+    throw err;
+  }
+}
+
+async function resolveProfileRuntimeInner(
   opts: ResolveProfileRuntimeOptions,
 ): Promise<ProfileRuntime> {
   const rootDir = opts.config ? dirname(opts.config) : undefined;
@@ -220,7 +241,7 @@ export async function resolveProfileRuntime(
   const root = createRootConfig(profile, profileConfig, encrypted.secrets);
   await saveRootConfig(root, configPath);
   await writeActiveProfile(appPaths.rootDir, profile);
-  console.log(`配置已保存到 ${configPath}\n`);
+  console.log(msgs().cli.configSaved(configPath));
   return { cfg: runtimeProfileConfig(root, profile), profileConfig, configPath, appPaths, profile };
 }
 
@@ -260,7 +281,7 @@ async function bootstrapProfileIntoExistingRoot(args: {
     },
   };
   await saveRootConfig(markPermissionDefaultsMigration(nextRoot, profile), configPath);
-  console.log(`配置已保存到 ${configPath}\n`);
+  console.log(msgs().cli.configSaved(configPath));
   return {
     cfg: runtimeProfileConfig(nextRoot, profile),
     profileConfig,
@@ -427,25 +448,19 @@ async function migrateV1ToV2WithActiveBridgeHandling(
 }
 
 async function resolveBootstrapAppConfig(opts: ResolveProfileRuntimeOptions): Promise<AppConfig> {
+  const m = msgs();
   if (!opts.appId) {
     if (!isInteractiveTerminal()) {
-      throw new Error(
-        '当前没有配置，非交互模式无法完成扫码创建应用。' +
-          '请先在终端运行 `lark-channel-bridge run` 完成首次初始化，' +
-          '或传入 --app-id 和 --app-secret。',
-      );
+      throw new Error(m.cli.bootstrapNoConfigNonInteractive);
     }
     return runRegistrationWizard();
   }
   let appSecret = opts.appSecret;
   if (!appSecret) {
     if (!isInteractiveTerminal()) {
-      throw new Error(
-        `非交互模式缺少 App Secret: ${opts.appId}。` +
-          '请传入 --app-secret <secret>，或在终端中重新运行命令后按提示输入。',
-      );
+      throw new Error(m.cli.bootstrapMissingSecretNonInteractive(opts.appId));
     }
-    appSecret = await promptPassword(`输入 ${opts.appId} 的 App Secret: `);
+    appSecret = await promptPassword(m.cli.enterAppSecretPrompt(opts.appId));
   }
   if (!appSecret) throw new Error('app secret is required');
   const tenant = tenantBrandFromString(opts.tenant);
@@ -454,9 +469,9 @@ async function resolveBootstrapAppConfig(opts: ResolveProfileRuntimeOptions): Pr
     throw new Error(`app credentials validation failed: ${result.reason ?? 'unknown'}`);
   }
   if (result.botName) {
-    console.log(`✓ 应用凭证校验通过: ${result.botName}`);
+    console.log(m.cli.credentialsValidatedNamed(result.botName));
   } else {
-    console.log('✓ 应用凭证校验通过');
+    console.log(m.cli.credentialsValidated);
   }
   return {
     accounts: {
@@ -566,10 +581,11 @@ export async function materializeEnvSecretForService(
 function formatAmbiguousAgentSelectionError(
   detected: Array<{ kind: AgentKind; binaryPath: string }>,
 ): string {
+  const m = msgs();
   const lines = detected.map((agent) => `  - ${agent.kind}: ${agent.binaryPath}`);
   return [
-    '检测到多个本地 agent，请使用 --agent <claude|codex> 指定要初始化哪一个。',
-    '已检测到：',
+    m.cli.ambiguousAgentsHeader,
+    m.cli.ambiguousAgentsDetectedLabel,
     ...lines,
   ].join('\n');
 }
@@ -587,9 +603,10 @@ async function selectDetectedAgent(
 
 async function promptForDetectedAgentSelection(detected: DetectedAgent[]): Promise<AgentKind | undefined> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) return undefined;
-  p.intro('选择本地 agent');
+  const m = msgs();
+  p.intro(m.cli.selectAgentIntro);
   const selected = await p.select<AgentKind>({
-    message: '检测到多个本地 agent，本次要初始化哪一个？',
+    message: m.cli.selectAgentMessage,
     options: detected.map((agent) => ({
       value: agent.kind,
       label: displayAgentKind(agent.kind),
@@ -598,10 +615,10 @@ async function promptForDetectedAgentSelection(detected: DetectedAgent[]): Promi
     initialValue: detected[0]?.kind,
   });
   if (p.isCancel(selected)) {
-    p.cancel('已取消 agent 选择。');
-    throw new UserCancelledError('已取消启动。');
+    p.cancel(m.cli.agentSelectionCancelled);
+    throw new UserCancelledError(m.cli.startCancelled);
   }
-  p.outro(`已选择 ${displayAgentKind(selected)}`);
+  p.outro(m.cli.agentSelected(displayAgentKind(selected)));
   return selected;
 }
 
@@ -692,7 +709,7 @@ async function maybeMigratePlaintextSecret(
       );
       await setSecret(secretKeyForApp(cfg.accounts.app.id), s, appPaths);
       await saveConfig(next, configPath);
-      console.log('🔒 已把 App Secret 加密迁移到 ~/.lark-channel/secrets.enc');
+      console.log(msgs().cli.secretMigratedToKeystore);
       return next;
     } catch (err) {
       log.warn('config', 'migrate-encrypted-failed', {
@@ -714,7 +731,7 @@ async function maybeMigratePlaintextSecret(
         appPaths,
       );
       await saveConfig(next, configPath);
-      console.log('🔒 已把 secrets provider 切到 wrapper 形态');
+      console.log(msgs().cli.secretsProviderWrapperMigrated);
       return next;
     }
   } catch (err) {

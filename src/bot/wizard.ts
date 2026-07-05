@@ -1,6 +1,7 @@
 import { registerApp } from '@larksuite/channel';
 import qrcode from 'qrcode-terminal';
 import type { AppConfig, TenantBrand } from '../config/schema';
+import { msgs } from '../i18n';
 
 export interface ScopeGrantLink {
   /** Authorization URL — opening it lands on the confirm page with the new
@@ -55,22 +56,23 @@ export async function requestScopeGrantLink(opts: {
 }
 
 export async function runRegistrationWizard(): Promise<AppConfig> {
-  console.log('\n未检测到飞书应用配置，进入扫码创建向导。\n');
+  console.log(msgs().cli.wizardIntro);
 
   const result = await registerApp({
     source: 'lark-channel-bridge',
     onQRCodeReady: (info) => {
-      console.log('请用飞书 App 扫描以下二维码完成应用创建：\n');
+      const m = msgs();
+      console.log(m.cli.wizardScanQr);
       qrcode.generate(info.url, { small: true });
       const mins = Math.max(1, Math.round(info.expireIn / 60));
-      console.log(`\n二维码有效期：约 ${mins} 分钟`);
-      console.log(`也可以直接在浏览器打开：${info.url}\n`);
+      console.log(m.cli.wizardQrExpiry(mins));
+      console.log(m.cli.wizardOpenInBrowser(info.url));
     },
     onStatusChange: (info) => {
       if (info.status === 'domain_switched') {
-        console.log('识别到国际版租户，已切换到 larksuite.com 域名。');
+        console.log(msgs().cli.wizardDomainSwitched);
       } else if (info.status === 'slow_down') {
-        console.log('轮询速度过快，已自动降速。');
+        console.log(msgs().cli.wizardSlowDown);
       }
     },
   });
@@ -78,13 +80,14 @@ export async function runRegistrationWizard(): Promise<AppConfig> {
   const tenant: TenantBrand = result.user_info?.tenant_brand ?? 'feishu';
   const operatorOpenId = result.user_info?.open_id;
 
-  console.log('\n✓ 应用创建成功');
+  const m = msgs();
+  console.log(m.cli.wizardAppCreated);
   console.log(`  App ID:  ${result.client_id}`);
   console.log(`  Tenant:  ${tenant}`);
   if (operatorOpenId) {
-    console.log(`  Creator: ${operatorOpenId} (Lark 应用 owner，自动豁免访问控制)`);
+    console.log(m.cli.wizardCreatorExempt(operatorOpenId));
   } else {
-    console.log('  ⚠️ 未拿到扫码用户的 open_id；启动后会通过应用 owner API 解析创建者。');
+    console.log(m.cli.wizardNoOpenIdOwnerApi);
   }
 
   // No access fields are seeded here. The bot creator is resolved at
@@ -94,11 +97,9 @@ export async function runRegistrationWizard(): Promise<AppConfig> {
   // `allowedUsers` / `allowedChats` / `admins` stay empty (= nobody outside
   // the creator) until the operator tightens via `/config`.
   if (operatorOpenId) {
-    console.log(`  Creator: ${operatorOpenId} (Lark 应用 owner，自动豁免所有访问控制)`);
+    console.log(m.cli.wizardCreatorExemptAll(operatorOpenId));
   } else {
-    console.log(
-      '  ⚠️ 未拿到扫码用户的 open_id；首次启动时 bridge 会自行调 application/v6 API 解析当前 owner。',
-    );
+    console.log(m.cli.wizardNoOpenIdOwnerApiV6);
   }
 
   const cfg: AppConfig = {

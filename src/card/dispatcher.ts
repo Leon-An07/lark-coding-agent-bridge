@@ -15,6 +15,7 @@ import {
   updateManagedCard,
 } from './managed';
 import { runCommandHandler, type CommandContext, type Controls } from '../commands';
+import { msgs } from '../i18n';
 import { log } from '../core/logger';
 import { canUseDm, canUseGroup } from '../policy/access';
 import type { RunExecutor } from '../runtime/run-executor';
@@ -157,7 +158,7 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
           scheduleCardReplace(deps, expiredCard()); // grey it in place (best-effort)
           try {
             await deps.channel.send(deps.evt.chatId, {
-              text: '⏰ 这张卡片已过期，请重新发送你的需求，我会发一张新的。',
+              text: msgs().cards.cardExpiredNotice,
             });
           } catch {
             // best-effort notice
@@ -169,7 +170,7 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
           // of silently dropping it.
           try {
             await deps.channel.send(deps.evt.chatId, {
-              text: '⚠️ 这个按钮已提交过，每个按钮只能提交一次。如果之前的提交没有得到回复，请直接用文字重新发送你的选择。',
+              text: msgs().cards.buttonAlreadySubmitted,
             });
           } catch {
             // best-effort notice
@@ -246,18 +247,19 @@ function clickResultSummary(
   payload: Record<string, unknown>,
   formValue: Record<string, unknown> | undefined,
 ): string {
+  const m = msgs().cards;
   const ask = payload[ASK_MAP_MARKER];
   if (Array.isArray(ask)) {
     const answers = resolveAskAnswers(ask as AskMapEntry[], formValue);
     return Object.entries(answers)
-      .map(([q, a]) => `**${q}** ${Array.isArray(a) ? a.join('、') || '（空）' : a || '（空）'}`)
+      .map(([q, a]) => m.askAnswerEntry(q, a))
       .join('\n');
   }
   const { [BRIDGE_CALLBACK_MARKER]: _m, bridge_token: _t, ...rest } = payload;
   const vals = Object.values(rest)
     .filter((v) => typeof v === 'string' || typeof v === 'number')
     .map(String);
-  return vals.length ? `你的选择:${vals.join('、')}` : '';
+  return vals.length ? m.yourChoice(vals) : '';
 }
 
 async function resolveScope(

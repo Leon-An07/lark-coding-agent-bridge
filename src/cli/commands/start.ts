@@ -18,8 +18,8 @@ import {
   type ProfileConfig,
 } from '../../config/profile-schema';
 import type { AppConfig } from '../../config/schema';
-import { getLanguage, isComplete } from '../../config/schema';
-import { setActiveLocale } from '../../i18n';
+import { isComplete } from '../../config/schema';
+import { msgs } from '../../i18n';
 import { configureLogger, gcOldLogs, log, reportError } from '../../core/logger';
 import { loadTelemetryAdapter, telemetry } from '../../core/telemetry';
 import { gcMediaCache } from '../../media/cache';
@@ -88,14 +88,13 @@ export async function runStart(opts: StartOptions): Promise<void> {
     allowBootstrap: true,
     handleActiveBridgeMigrationConflict: async (err) => {
       const handled = await promptAndStopActiveBridgeMigrationConflict(err, {
-        cancelMessage: '已取消启动。',
+        cancelMessage: msgs().cli.startCancelled,
       });
       if (!handled) process.exit(0);
       return true;
     },
   });
   let cfg = runtime.cfg;
-  setActiveLocale(getLanguage(cfg));
   const configPath = runtime.configPath;
   const appPaths = runtime.appPaths;
   let profileConfig = runtime.profileConfig;
@@ -160,7 +159,7 @@ export async function runStart(opts: StartOptions): Promise<void> {
         if (conflicts.length > 0) {
           const proceed = await resolveConflict(conflicts);
           if (!proceed) {
-            console.log('已取消启动。');
+            console.log(msgs().cli.startCancelled);
             process.exit(0);
           }
         }
@@ -189,7 +188,7 @@ export async function runStart(opts: StartOptions): Promise<void> {
         const stop = async (sig: string): Promise<void> => {
           if (stopping) return;
           stopping = true;
-          console.log(`\n收到 ${sig}，正在关闭...`);
+          console.log(msgs().cli.shutdownSignal(sig));
           try {
             await bridge.disconnect();
           } catch (err) {
@@ -309,7 +308,7 @@ export async function runStart(opts: StartOptions): Promise<void> {
                 profileConfig = nextRuntime.profileConfig;
                 agent = nextAgent;
                 controls = nextControls;
-                console.log('✓ 已用新凭据重连');
+                console.log(msgs().cli.reconnectedNewCreds);
               } finally {
                 if (nextAppLock) {
                   await nextAppLock.release().catch((err) =>
@@ -448,29 +447,25 @@ export function createRuntimeAgent(
  * users running a daemon.
  */
 async function resolveConflict(conflicts: ProcessEntry[]): Promise<boolean> {
-  console.log(
-    `⚠️  检测到这个飞书应用已经有 ${conflicts.length} 个 bot 正在运行:`,
-  );
+  const m = msgs();
+  console.log(m.cli.conflictDetected(conflicts.length));
   for (const e of conflicts) {
     const ago = formatAgo(Date.now() - new Date(e.startedAt).getTime());
     // botName 只在 WS 连上后才回填,刚启动 / 连接失败的旧 entry 可能没有。
     const label = e.botName ? `bot ${e.botName} (${e.appId})` : `bot ${e.appId}`;
-    console.log(`   - ${label},进程 ${e.id},${ago}启动`);
+    console.log(m.cli.conflictEntry(label, e.id, ago));
   }
   console.log('');
 
   if (!process.stdin.isTTY) {
-    console.warn(
-      '⚠️  当前不是交互式启动,已自动取消。如需替换,先用 `kill <bot id>` 关掉旧的。\n',
-    );
+    console.warn(m.cli.conflictNonInteractive);
     return false;
   }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const ask = (q: string): Promise<string> => new Promise((resolve) => rl.question(q, resolve));
   try {
-    const verb = conflicts.length > 1 ? '它们' : '那个';
-    const answer = (await ask(`继续启动会先关掉${verb},是否继续? [y/N]: `))
+    const answer = (await ask(m.cli.confirmKillConflicts(conflicts.length)))
       .trim()
       .toLowerCase();
     if (answer !== 'y' && answer !== 'yes') {
@@ -479,9 +474,9 @@ async function resolveConflict(conflicts: ProcessEntry[]): Promise<boolean> {
     for (const e of conflicts) {
       try {
         process.kill(e.pid, 'SIGTERM');
-        console.log(`✓ 已关掉 bot ${e.id}`);
+        console.log(m.cli.killedConflict(e.id));
       } catch (err) {
-        console.warn(`✗ 关掉 bot ${e.id} 失败:${(err as Error).message}`);
+        console.warn(m.cli.killConflictFailed(e.id, (err as Error).message));
       }
     }
     // Brief wait so targets unregister themselves before we register on top.
@@ -499,7 +494,8 @@ async function handleRuntimeLockConflict(
   opts: StartOptions,
 ): Promise<RuntimeLockConflictAction> {
   if (!(err instanceof RuntimeLockConflictError)) return 'unhandled';
-  console.error(`✗ 当前 ${err.kind === 'profile' ? 'profile' : 'app'} 已有 bridge 进程占用。`);
+  const m = msgs();
+  console.error(m.cli.lockHeldByOther(err.kind === 'profile' ? 'profile' : 'app'));
   if (err.meta) {
     const app = err.meta.appId ? ` app=${err.meta.appId}` : '';
     console.error(
@@ -514,7 +510,7 @@ async function handleRuntimeLockConflict(
     ? await opts.confirmStopRuntimeLockProcess(err)
     : await confirmStopRuntimeLockProcess(err);
   if (!confirmed) {
-    console.log('已取消启动。');
+    console.log(m.cli.startCancelled);
     return 'cancel';
   }
 
@@ -522,25 +518,25 @@ async function handleRuntimeLockConflict(
     ? await opts.stopRuntimeLockProcess(err.meta)
     : await stopProcessEntry({ pid: err.meta.pid });
   if (result === 'killed') {
-    console.log(`✓ 已强制停止 pid ${err.meta.pid}`);
+    console.log(m.cli.forceStoppedPid(err.meta.pid));
   } else {
-    console.log(`✓ 已停止 pid ${err.meta.pid}`);
+    console.log(m.cli.stoppedPid(err.meta.pid));
   }
   return 'retry';
 }
 
 async function confirmStopRuntimeLockProcess(err: RuntimeLockConflictError): Promise<boolean> {
+  const m = msgs();
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(
-      `当前 ${err.kind === 'profile' ? 'profile' : 'app'} 已有 bridge 进程占用；` +
-        '非交互模式无法确认停止，请先用 `lark-channel-bridge ps` 查看并用 `lark-channel-bridge kill <bot id>` 停止后重试',
+      m.cli.lockNonInteractiveStopError(err.kind === 'profile' ? 'profile' : 'app'),
     );
   }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     const answer = (await new Promise<string>((resolve) =>
-      rl.question('是否停止旧进程并重新启动? [y/N]: ', resolve),
+      rl.question(m.cli.confirmStopOldRestart, resolve),
     ))
       .trim()
       .toLowerCase();
@@ -570,8 +566,9 @@ async function flushTelemetry(timeoutMs = 2000): Promise<void> {
 }
 
 function formatAgo(ms: number): string {
-  if (ms < 60_000) return `${Math.floor(ms / 1000)} 秒前`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} 分钟前`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} 小时前`;
-  return `${Math.floor(ms / 86_400_000)} 天前`;
+  const m = msgs();
+  if (ms < 60_000) return m.cli.agoSeconds(Math.floor(ms / 1000));
+  if (ms < 3_600_000) return m.cli.agoMinutes(Math.floor(ms / 60_000));
+  if (ms < 86_400_000) return m.cli.agoHours(Math.floor(ms / 3_600_000));
+  return m.cli.agoDays(Math.floor(ms / 86_400_000));
 }

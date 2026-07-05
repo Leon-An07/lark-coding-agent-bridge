@@ -3,6 +3,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { msgs } from '../i18n';
 import { normalizeSessionPreview } from './preview';
 
 export interface SessionSummary {
@@ -84,7 +85,7 @@ async function summarize(path: string): Promise<{ preview: string; lineCount: nu
     rl.close();
     stream.destroy();
   }
-  return { preview: preview || '(空会话)', lineCount };
+  return { preview: preview || msgs().policy.emptySession, lineCount };
 }
 
 function extractUserText(content: unknown): string {
@@ -106,15 +107,16 @@ function extractUserText(content: unknown): string {
 
 /** Format a relative time like "3 小时前", "昨天", "3 天前". */
 export function formatRelTime(mtime: number): string {
+  const m = msgs().policy;
   const diffMs = Date.now() - mtime;
   const min = Math.floor(diffMs / 60_000);
-  if (min < 1) return '刚刚';
-  if (min < 60) return `${min} 分钟前`;
+  if (min < 1) return m.relJustNow;
+  if (min < 60) return m.relMinutesAgo(min);
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} 小时前`;
+  if (hr < 24) return m.relHoursAgo(hr);
   const day = Math.floor(hr / 24);
-  if (day === 1) return '昨天';
-  if (day < 30) return `${day} 天前`;
+  if (day === 1) return m.relYesterday;
+  if (day < 30) return m.relDaysAgo(day);
   const mo = Math.floor(day / 30);
-  return `${mo} 个月前`;
+  return m.relMonthsAgo(mo);
 }

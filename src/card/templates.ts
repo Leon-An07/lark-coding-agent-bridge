@@ -1,3 +1,5 @@
+import { msgs } from '../i18n';
+
 interface ButtonSpec {
   text: string;
   value: Record<string, unknown>;
@@ -37,13 +39,14 @@ function shell(title: string, elements: object[]): object {
  * (click to expand). No buttons, so it can't be answered again.
  */
 export function lockedCard(result?: string): object {
+  const m = msgs().cards;
   const elements: object[] = result
     ? [
         {
           tag: 'collapsible_panel',
           expanded: false,
           header: {
-            title: { tag: 'markdown', content: '查看提交内容' },
+            title: { tag: 'markdown', content: m.lockedPanelTitle },
             vertical_align: 'center',
             icon: { tag: 'standard_icon', token: 'down-small-ccm_outlined', size: '16px 16px' },
             icon_position: 'follow_text',
@@ -54,11 +57,11 @@ export function lockedCard(result?: string): object {
           elements: [{ tag: 'markdown', content: result }],
         },
       ]
-    : [{ tag: 'markdown', content: '已收到你的操作,这张卡已完成。' }];
+    : [{ tag: 'markdown', content: m.lockedBody }];
   return {
     schema: '2.0',
-    config: { summary: { content: '已完成' } },
-    header: { title: { tag: 'plain_text', content: '✅ 已完成' }, template: 'green' },
+    config: { summary: { content: m.doneLabel } },
+    header: { title: { tag: 'plain_text', content: m.lockedHeader }, template: 'green' },
     body: { elements },
   };
 }
@@ -69,11 +72,12 @@ export function lockedCard(result?: string): object {
  * original spec isn't available at click time), which is fine: it's dead.
  */
 export function expiredCard(): object {
+  const m = msgs().cards;
   return {
     schema: '2.0',
-    config: { summary: { content: '已过期' } },
-    header: { title: { tag: 'plain_text', content: '⏰ 已过期' }, template: 'grey' },
-    body: { elements: [{ tag: 'markdown', content: '这张卡片已过期,请重新发送你的需求。' }] },
+    config: { summary: { content: m.expiredSummary } },
+    header: { title: { tag: 'plain_text', content: m.expiredHeader }, template: 'grey' },
+    body: { elements: [{ tag: 'markdown', content: m.expiredBody }] },
   };
 }
 
@@ -90,7 +94,7 @@ export function disabledCard(card: object): object {
   disableButtons(clone);
   if (clone.header) clone.header.template = 'grey'; // grey header signals "closed"
   const body = (clone.body ??= {});
-  (body.elements ??= []).unshift({ tag: 'markdown', content: '_已改用文字回复,此卡已关闭_' });
+  (body.elements ??= []).unshift({ tag: 'markdown', content: msgs().cards.disabledNote });
   return clone;
 }
 
@@ -110,33 +114,32 @@ function disableButtons(node: unknown): void {
 }
 
 export function workspacesCard(current: string | undefined, named: Record<string, string>): object {
+  const m = msgs().cards;
   const entries = Object.entries(named);
   const elements: object[] = [];
 
-  elements.push(divMd(`当前 cwd：\`${escapeCode(current ?? '(未设置)')}\``));
+  elements.push(divMd(m.cwdLine(escapeCode(current ?? m.notSet))));
 
   if (entries.length === 0) {
     elements.push(HR);
-    elements.push(divMd('暂无命名工作目录。'));
-    elements.push(
-      divMd('💡 发送 `/ws save <name>` 把当前 cwd 存为命名工作目录'),
-    );
+    elements.push(divMd(m.noNamedWorkspaces));
+    elements.push(divMd(m.wsSaveHint));
   } else {
     elements.push(HR);
     entries.forEach(([name, path], i) => {
-      const marker = path === current ? '  ← 当前' : '';
+      const marker = path === current ? m.currentMarker : '';
       elements.push(divMd(`**${escapeMd(name)}** → \`${escapeCode(path)}\`${marker}`));
       elements.push(
         actions([
-          { text: '切换到此处', value: { cmd: 'ws.use', name }, style: 'primary' },
-          { text: '删除', value: { cmd: 'ws.remove', name }, style: 'danger' },
+          { text: m.switchHere, value: { cmd: 'ws.use', name }, style: 'primary' },
+          { text: m.deleteLabel, value: { cmd: 'ws.remove', name }, style: 'danger' },
         ]),
       );
       if (i < entries.length - 1) elements.push(HR);
     });
   }
 
-  return shell('📂 工作目录', elements);
+  return shell(m.workspacesLabel, elements);
 }
 
 export interface StatusInfo {
@@ -162,16 +165,17 @@ export interface StatusInfo {
 }
 
 export function statusCard(info: StatusInfo): object {
+  const m = msgs().cards;
   const sessionLine = info.sessionId
-    ? `\`${info.sessionId}\`${info.sessionStale ? ' ⚠️ 旧 cwd，下一条会新建' : ''}`
-    : (info.emptySessionText ?? '(无)');
+    ? `\`${info.sessionId}\`${info.sessionStale ? m.sessionStaleSuffix : ''}`
+    : (info.emptySessionText ?? m.noSession);
   // For topic groups, surface that the scope is per-topic so the user
   // knows /cd / /new only affect this topic.
   const scopeLine =
     info.chatMode === 'topic'
-      ? `\`${escapeCode(info.scope)}\` _（话题独立 session）_`
+      ? m.topicScopeLine(escapeCode(info.scope))
       : `\`${escapeCode(info.scope)}\``;
-  const cwdLine = info.cwd ? `\`${escapeCode(info.cwd)}\`` : '(未设置)';
+  const cwdLine = info.cwd ? `\`${escapeCode(info.cwd)}\`` : m.notSet;
   const queueLine = info.queue
     ? `${info.queue.active}/${info.queue.cap} active, ${info.queue.waiting} waiting`
     : 'unknown';
@@ -192,14 +196,14 @@ export function statusCard(info: StatusInfo): object {
     `🚦 **queue**: ${queueLine}`,
     `👤 **owner API**: ${escapeMd(info.ownerState)}`,
   ];
-  return shell('📊 当前状态', [
+  return shell(m.statusTitle, [
     divMd(lines.join('\n')),
     HR,
     actions([
-      { text: '🆕 新会话', value: { cmd: 'new' }, style: 'primary' },
-      { text: '🔁 恢复会话', value: { cmd: 'resume' } },
-      { text: '📂 工作目录', value: { cmd: 'ws.list' } },
-      { text: '💡 帮助', value: { cmd: 'help' } },
+      { text: m.btnNewSession, value: { cmd: 'new' }, style: 'primary' },
+      { text: m.btnResume, value: { cmd: 'resume' } },
+      { text: m.workspacesLabel, value: { cmd: 'ws.list' } },
+      { text: m.btnHelp, value: { cmd: 'help' } },
     ]),
   ]);
 }
@@ -215,19 +219,20 @@ export interface ResumeEntry {
 }
 
 export function resumeCard(cwd: string, entries: ResumeEntry[]): object {
+  const m = msgs().cards;
   const elements: object[] = [];
-  elements.push(divMd(`当前 cwd：\`${escapeCode(cwd)}\``));
+  elements.push(divMd(m.cwdLine(escapeCode(cwd))));
 
   if (entries.length === 0) {
     elements.push(HR);
-    elements.push(divMd('此 cwd 下没有历史会话。'));
-    return shell('🔁 恢复历史会话', elements);
+    elements.push(divMd(m.noHistorySessions));
+    return shell(m.resumeTitle, elements);
   }
 
   elements.push(HR);
   entries.forEach((e, i) => {
-    const marker = e.current ? '  ← 当前' : '';
-    const detail = e.detail ?? `${e.lineCount ?? 0} 条`;
+    const marker = e.current ? m.currentMarker : '';
+    const detail = e.detail ?? m.lineCount(e.lineCount ?? 0);
     const displayId = e.displayId ?? e.sessionId;
     elements.push(
       divMd(
@@ -237,7 +242,7 @@ export function resumeCard(cwd: string, entries: ResumeEntry[]): object {
     elements.push(
       actions([
         {
-          text: e.current ? '已是当前会话' : '▸ 恢复此会话',
+          text: e.current ? m.alreadyCurrentSession : m.resumeThisSession,
           value: { cmd: 'resume.use', arg: e.sessionId },
           style: e.current ? 'default' : 'primary',
         },
@@ -246,44 +251,20 @@ export function resumeCard(cwd: string, entries: ResumeEntry[]): object {
     if (i < entries.length - 1) elements.push(HR);
   });
 
-  return shell('🔁 恢复历史会话', elements);
+  return shell(m.resumeTitle, elements);
 }
 
 export function helpCard(agentName = 'Agent'): object {
+  const m = msgs().cards;
   const escapedAgentName = escapeMd(agentName);
-  return shell('💡 使用帮助', [
-    divMd(
-      [
-        '**命令列表**',
-        '',
-        '- `/new` `/reset` — 清空当前 chat 的会话',
-        '- `/new chat [name]` — 新建群+新会话，自动拉你进群',
-        '- `/resume [N]` — 列出并恢复历史会话（最多 N 条）',
-        '- `/cd <path>` — 切换工作目录（会重置 session）',
-        '- `/ws list|save <name>|use <name>|remove <name>` — 工作目录',
-        '- `/account` — 查看当前应用；`/account change` 换 appId/secret 并重连',
-        '- `/config` — 调整偏好、访问控制和 lark-cli 身份策略',
-        '- `/mention group on|off|default` — 设置当前群是否需要 @bot；off 是专属群免 @ 模式',
-        '- `/status` — 当前状态',
-        '- `/stop` — 结束当前正在跑的任务（也可点卡片底部 ⏹ 终止 按钮）',
-        '- `/stop comment:<scopeHash>` — 管理员停止云文档评论任务',
-        '- `/timeout [N|off|default]` — 当前 session 的探活分钟数,`/config` 改全局默认',
-        '- `/timeout comment:<scopeHash> N` — 管理员设置云文档评论任务探活',
-        '- `/ps` — 列出本机所有 bot,标识当前正在回复的那个',
-        '- `/exit <id|#>` — 关掉指定 bot(用 `/ps` 看 id/序号)',
-        '- `/reconnect` — 强制重连 WebSocket(网络抖动后 bot 没反应时用)',
-        `- \`/doctor [描述]\` — 把日志和描述交给 ${escapedAgentName} 自助诊断`,
-        '- `/help` — 本帮助',
-        '',
-        `其他内容直接交给 ${escapedAgentName}。`,
-      ].join('\n'),
-    ),
+  return shell(m.helpTitle, [
+    divMd(m.helpBody(escapedAgentName)),
     HR,
     actions([
-      { text: '📊 状态', value: { cmd: 'status' }, style: 'primary' },
-      { text: '🔁 恢复会话', value: { cmd: 'resume' } },
-      { text: '📂 工作目录', value: { cmd: 'ws.list' } },
-      { text: '🆕 新会话', value: { cmd: 'new' } },
+      { text: m.btnStatus, value: { cmd: 'status' }, style: 'primary' },
+      { text: m.btnResume, value: { cmd: 'resume' } },
+      { text: m.workspacesLabel, value: { cmd: 'ws.list' } },
+      { text: m.btnNewSession, value: { cmd: 'new' } },
     ]),
   ]);
 }

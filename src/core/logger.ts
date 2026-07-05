@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createWriteStream, mkdirSync, readdirSync, statSync, type WriteStream } from 'node:fs';
 import { open, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { msgs } from '../i18n';
 import { telemetry } from './telemetry';
 
 export interface LoggerOptions {
@@ -366,16 +367,17 @@ function formatStdout(
 ): string {
   // Friendly shapes for the few events users actually see.
   if (phase === 'ws') {
+    const m = msgs();
     if (event === 'connected') {
-      const bot = fields.bot ?? '-';
-      const appId = fields.appId ? ` (${fields.appId})` : '';
-      const agent = fields.agent ?? '-';
-      const proc = fields.procId ? `  进程: ${fields.procId}` : '';
-      return `✓ 已连接  bot: ${bot}${appId}  agent: ${agent}${proc}`;
+      const bot = String(fields.bot ?? '-');
+      const appId = fields.appId ? ` (${String(fields.appId)})` : '';
+      const agent = String(fields.agent ?? '-');
+      const proc = fields.procId ? m.cli.wsConnectedProc(String(fields.procId)) : '';
+      return m.cli.wsConnected(bot, appId, agent, proc);
     }
-    if (event === 'reconnecting') return '↻ 正在重连…';
-    if (event === 'reconnected') return '✓ 已重连';
-    if (event === 'fail') return `✗ WS 错误: ${fields.err ?? ''}`;
+    if (event === 'reconnecting') return m.cli.wsReconnecting;
+    if (event === 'reconnected') return m.cli.wsReconnected;
+    if (event === 'fail') return m.cli.wsError(String(fields.err ?? ''));
   }
   if (phase === 'intake' && event === 'enter') {
     const c = ctx.chatId ? ctx.chatId.slice(-6) : '-';

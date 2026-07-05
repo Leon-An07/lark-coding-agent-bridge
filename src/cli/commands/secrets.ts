@@ -4,6 +4,7 @@ import { paths } from '../../config/paths';
 import { loadRootConfig, readActiveProfile } from '../../config/profile-store';
 import { secretKeyForApp } from '../../config/schema';
 import { listAllProfiles } from '../../runtime/profile-discovery';
+import { msgs } from '../../i18n';
 import { promptPassword } from '../prompt';
 
 /**
@@ -85,27 +86,29 @@ export async function runSecretsSet(
   appId: string | undefined,
   opts: SecretProfileOptions = {},
 ): Promise<void> {
+  const m = msgs();
   if (!appId) {
-    console.error('用法: lark-channel-bridge secrets set --app-id <id>');
+    console.error(m.cli.secretsSetUsage);
     process.exit(1);
   }
-  const plaintext = await promptPassword(`输入 ${appId} 的 App Secret: `);
+  const plaintext = await promptPassword(m.cli.enterAppSecretPrompt(appId));
   if (!plaintext) {
-    console.error('✗ 取消(secret 为空)');
+    console.error(m.cli.secretsCancelledEmpty);
     process.exit(1);
   }
   await setAppSecret(appId, plaintext, opts);
-  console.log(`✓ 已加密存到 ~/.lark-channel/secrets.enc`);
+  console.log(m.cli.secretsSavedEncrypted);
 }
 
 export async function runSecretsList(opts: SecretProfileOptions = {}): Promise<void> {
+  const m = msgs();
   const appPaths = await resolveSecretProfilePaths(opts);
   const ids = await listSecretIds(appPaths);
   if (ids.length === 0) {
-    console.log('当前没有加密存储的 secret。');
+    console.log(m.cli.secretsNoneStored);
     return;
   }
-  console.log(`# 当前共 ${ids.length} 个 secret 在加密存储里\n`);
+  console.log(m.cli.secretsCount(ids.length));
   for (const id of ids) {
     console.log(`  - ${id}`);
   }
@@ -115,17 +118,18 @@ export async function runSecretsRemove(
   appId: string | undefined,
   opts: SecretProfileOptions = {},
 ): Promise<void> {
+  const m = msgs();
   if (!appId) {
-    console.error('用法: lark-channel-bridge secrets remove --app-id <id>');
+    console.error(m.cli.secretsRemoveUsage);
     process.exit(1);
   }
   const id = secretKeyForApp(appId);
   const removed = await removeAppSecret(appId, opts);
   if (!removed) {
-    console.error(`✗ 没找到 secret: ${id}`);
+    console.error(m.cli.secretsNotFound(id));
     process.exit(1);
   }
-  console.log(`✓ 已删除 ${id}`);
+  console.log(m.cli.secretsRemoved(id));
 }
 
 export async function resolveSecretAcrossProfiles(

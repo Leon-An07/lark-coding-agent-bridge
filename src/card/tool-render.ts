@@ -1,4 +1,5 @@
 import type { ToolEntry } from './run-state';
+import { msgs } from '../i18n';
 
 const HEADER_SUMMARY_MAX = 80;
 const BODY_FIELD_MAX = 600;
@@ -33,12 +34,12 @@ export function toolBodyMd(tool: ToolEntry): string {
       parts.push(`**Output**\n\`\`\`\n${truncated}\n\`\`\``);
     }
   } else if (tool.status === 'running') {
-    parts.push('_运行中…_');
+    parts.push(msgs().cards.toolRunningBody);
   }
 
   const body = parts.join('\n\n');
   if (body.length <= BODY_TOTAL_MAX) return body;
-  return `${body.slice(0, BODY_TOTAL_MAX)}…\n\n_（body 已截断,完整内容查 \`/doctor\` 或日志）_`;
+  return msgs().cards.toolBodyTruncated(body.slice(0, BODY_TOTAL_MAX));
 }
 
 function summarizeInput(name: string, input: unknown): string {
