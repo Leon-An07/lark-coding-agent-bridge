@@ -16,6 +16,9 @@ export type AgentEvent =
       cachedInputTokens?: number;
       reasoningOutputTokens?: number;
       costUsd?: number;
+      /** Current session context size (last turn's input + cache read +
+       * cache creation), NOT cumulative. Emitted per assistant turn. */
+      contextTokens?: number;
     }
   | {
       type: 'done';

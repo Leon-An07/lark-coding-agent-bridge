@@ -34,6 +34,10 @@ export interface RunState {
     outputTokens?: number;
     cachedInputTokens?: number;
     costUsd?: number;
+    /** Session context size estimated from the LAST assistant turn's usage
+     * (input + cache_read + cache_creation) — not cumulative. Drives the
+     * context-window notice appended to the reply tail. */
+    contextTokens?: number;
   };
 }
 

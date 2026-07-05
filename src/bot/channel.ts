@@ -16,6 +16,7 @@ import type { AgentAdapter, AgentEvent } from '../agent/types';
 import { handleCardAction } from '../card/dispatcher';
 import { CallbackAuth } from '../card/callback-auth';
 import { CallbackNonceStore } from '../card/callback-store';
+import { ContextNoticeTracker } from './context-notice';
 import { renderCard } from '../card/run-renderer';
 import { configureOpenCardStore, takeScopeOpenCard } from '../card/managed';
 import {
@@ -215,6 +216,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       })
     : undefined;
   const activePolicyFingerprints = new Map<string, string>();
+  const ctxNotices = new ContextNoticeTracker();
 
   const opts: LarkChannelOptions = {
     appId: cfg.accounts.app.id,
@@ -291,6 +293,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           callbackAuth,
           cotClient,
           activePolicyFingerprints,
+          ctxNotices,
           scope,
           mode,
         });
@@ -670,6 +673,7 @@ interface RunBatchDeps {
   callbackAuth?: CallbackAuth;
   cotClient?: CotClient;
   activePolicyFingerprints: Map<string, string>;
+  ctxNotices: ContextNoticeTracker;
   scope: string;
   mode: ChatMode;
 }
@@ -687,6 +691,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     callbackAuth,
     cotClient,
     activePolicyFingerprints,
+    ctxNotices,
     scope,
     mode,
   } = deps;
@@ -822,6 +827,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   } else {
     log.info('session', 'fresh', { cwd });
   }
+  let runModel: string | undefined;
+  let runSessionId: string | undefined = flow.resumeFrom;
   const recordSession = (evt: AgentEvent): void => {
     recordRunSessionEvent({
       scopeId: scope,
@@ -831,12 +838,30 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       policy: flow.policy,
       event: evt,
     });
+    if (evt.type === 'system' && evt.model) {
+      runModel = evt.model;
+    }
     if (evt.type === 'system' && evt.sessionId) {
+      runSessionId = evt.sessionId;
       log.info('session', 'set', { sessionId: evt.sessionId });
     }
     if (evt.type === 'system' && evt.threadId) {
       log.info('session', 'set-thread', { threadId: evt.threadId });
     }
+  };
+
+  // Context-window notice: computed once per run from the terminal state and
+  // appended to the reply tail (English, tiered, once per tier per session).
+  // Memoized so streaming re-renders of the same terminal state are stable.
+  let ctxNoticeDecided = false;
+  let ctxNotice: string | undefined;
+  const withContextNotice = (body: string, state: RunState): string => {
+    if (state.terminal === 'running' || !body.trim()) return body;
+    if (!ctxNoticeDecided) {
+      ctxNoticeDecided = true;
+      ctxNotice = ctxNotices.take(scope, runSessionId, state.usage?.contextTokens, runModel);
+    }
+    return ctxNotice ? `${body}\n\n${ctxNotice}` : body;
   };
 
   // Resolve idle-timeout for this run: scope override (on SessionEntry) wins
@@ -910,7 +935,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       : addWorkingReaction(channel, lastMsg.messageId);
 
   const markdownReply = (s: RunState): string => {
-    return renderText(filterForPrefs(s));
+    return withContextNotice(renderText(filterForPrefs(s)), s);
   };
 
   try {
@@ -935,6 +960,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
       if (!body.trim() && finalState.terminal === 'error') {
         body = renderText(filterForPrefs(finalState));
       }
+      body = withContextNotice(body, finalState);
       if (body.trim()) {
         await channel.send(chatId, { markdown: body }, sendOpts);
       }
@@ -1041,7 +1067,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
         recordSession,
         async () => {},
       );
-      const body = renderText(filterForPrefs(finalState));
+      const body = withContextNotice(renderText(filterForPrefs(finalState)), finalState);
       if (body.trim()) {
         await channel.send(chatId, { markdown: body }, sendOpts);
       }
@@ -1156,7 +1182,18 @@ async function processAgentStream(
           if (outputTokens !== undefined) reportMetric('tokens_out', outputTokens);
         }
         // Stash for the completion footer (card mode renders 用时 + token + 费用).
-        state = { ...state, usage: { inputTokens, outputTokens, cachedInputTokens, costUsd } };
+        // Merge, don't replace: per-turn context events and the final result
+        // totals arrive separately and would otherwise clobber each other.
+        state = {
+          ...state,
+          usage: {
+            inputTokens: inputTokens ?? state.usage?.inputTokens,
+            outputTokens: outputTokens ?? state.usage?.outputTokens,
+            cachedInputTokens: cachedInputTokens ?? state.usage?.cachedInputTokens,
+            costUsd: costUsd ?? state.usage?.costUsd,
+            contextTokens: evt.contextTokens ?? state.usage?.contextTokens,
+          },
+        };
         continue;
       }
 
