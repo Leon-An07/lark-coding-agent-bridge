@@ -12,9 +12,9 @@ describe('contextWindowFor', () => {
 });
 
 describe('ContextNoticeTracker', () => {
-  it('stays silent below 50% and fires once per tier per session', () => {
+  it('stays silent below 60% and fires once per tier per session', () => {
     const t = new ContextNoticeTracker();
-    expect(t.take('oc_a', 's1', 80_000, 'claude-opus-4-8')).toBeUndefined(); // 40%
+    expect(t.take('oc_a', 's1', 110_000, 'claude-opus-4-8')).toBeUndefined(); // 55%
 
     const yellow = t.take('oc_a', 's1', 120_000, 'claude-opus-4-8'); // 60%
     expect(yellow).toContain('🟡');

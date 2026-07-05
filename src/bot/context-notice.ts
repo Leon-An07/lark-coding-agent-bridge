@@ -12,7 +12,7 @@
 const TIERS: ReadonlyArray<{ threshold: number; icon: string; hint: string }> = [
   { threshold: 0.9, icon: '🔴', hint: 'nearly full — wrap up and /new' },
   { threshold: 0.75, icon: '🟠', hint: 'every turn rereads history; /new after this topic saves cost' },
-  { threshold: 0.5, icon: '🟡', hint: 'still fine; consider /new at a natural break' },
+  { threshold: 0.6, icon: '🟡', hint: 'still fine; consider /new at a natural break' },
 ];
 
 /** Infer the context window from the model id reported by the agent's init
@@ -27,7 +27,7 @@ function formatTokens(n: number): string {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M` : `${Math.round(n / 1000)}k`;
 }
 
-/** Highest tier index reached (0 = most severe), or undefined below 50%. */
+/** Highest tier index reached (0 = most severe), or undefined below 60%. */
 function tierFor(tokens: number, window: number): number | undefined {
   const ratio = tokens / window;
   for (let i = 0; i < TIERS.length; i++) {
