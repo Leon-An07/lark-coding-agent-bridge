@@ -548,3 +548,291 @@ export const cliEn: typeof cliZh = {
   // ── codex session history ──
   emptySessionPreview: '(empty session)',
 };
+
+export const cliJa: typeof cliZh = {
+  // ── shared across CLI commands ──
+  startCancelled: '起動をキャンセルしました。',
+  forceStoppedPid: (pid: number) => `✓ pid ${pid} を強制停止しました`,
+  stoppedPid: (pid: number) => `✓ pid ${pid} を停止しました`,
+  lockHeldByOther: (kind: 'profile' | 'app') =>
+    `✗ この ${kind} は既に別の bridge プロセスが使用中です。`,
+  enterAppSecretPrompt: (appId: string) => `${appId} の App Secret を入力してください: `,
+
+  // ── service (start/stop/restart/status/unregister) ──
+  serviceUnsupportedPlatform: (cmdName: string) =>
+    `${cmdName}: この OS ではバックグラウンド実行に対応していません。`,
+  serviceSupportedPlatforms: '  対応: macOS (launchd) / Linux (systemd) / Windows (Task Scheduler)',
+  serviceVerbStart: '起動',
+  serviceVerbRestart: '再起動',
+  serviceActionFailed: (action: string) => `✗ bot の${action}に失敗しました。`,
+  serviceActionFailedWithOutput: (action: string) => `✗ bot の${action}に失敗しました:`,
+  serviceFailureCommonCause:
+    '最も多い原因: 古い bot インスタンスがまだ終了処理中です。以下のいずれかをお試しください:',
+  serviceFailureRetryHint: '  1. 数秒待ってから、もう一度 `start` を実行してください',
+  serviceFailureCleanRegistrationHint: '  2. または登録を完全にクリアしてから起動してください:',
+  serviceFailureRawErrorLabel: '元のエラー:',
+  serviceNotConfigured: 'bot にはまだ app 認証情報が設定されていません。',
+  serviceNotConfiguredHint:
+    '`start` を再実行して初回の QR コードウィザードを完了するか、既存のアプリ情報を渡してください。',
+  lockStopHolderFirst: '  使用中のプロセスを先に停止してから、start を実行してください。',
+  lockNonInteractiveStopHint: (kind: 'profile' | 'app') =>
+    `  非対話モードでは ${kind} を使用中のプロセスの停止を確認できません。` +
+    '先に `lark-channel-bridge ps` で確認し、`lark-channel-bridge kill <bot id>` で停止してから再試行してください。',
+  confirmStopOldStartService:
+    '古いプロセスを停止してバックグラウンドサービスの起動を続けますか? [y/N]: ',
+  waitingForConnect: 'bot の接続を待っています...',
+  waitingForReconnect: 'bot の再接続を待っています...',
+  serviceVerbStarted: '起動しました',
+  serviceVerbRestarted: '再起動しました',
+  serviceConnected: (p: {
+    verb: string;
+    botName: string | undefined;
+    appId: string;
+    agentName: string;
+    agentId: string;
+    procId: string;
+  }) =>
+    `✓ ${p.verb}  bot: ${p.botName} (${p.appId})  agent: ${p.agentName} (${p.agentId})  プロセス: ${p.procId}`,
+  serviceConnectTimeout: (verb: string) =>
+    `⚠ コマンドを実行しましたが、30 秒以内に bot の接続を確認できませんでした (${verb})。`,
+  serviceViewLogs: (path: string) => `  ログの確認: tail -f ${path}`,
+  serviceOldInstanceRestart: '古い bot インスタンスを検出しました。停止してから再起動します...',
+  serviceStopOldWarning: (stderr: string) =>
+    `⚠ 古いインスタンスの停止時に警告がありました(再起動を続行します):\n${stderr}`,
+  serviceOldInstanceStuck:
+    '✗ 古い bot インスタンスが完全に停止しませんでした。しばらくしてから再試行するか、以下を実行してください:',
+  serviceUnregisterHint: '  unregister  # 登録を強制クリア',
+  serviceStartAgainHint: '  start       # 再度起動',
+  serviceNeverRanNoStop: 'bot はまだバックグラウンドで実行されたことがないため、停止は不要です。',
+  serviceNotRunning: 'bot は現在バックグラウンドで実行されていません。',
+  serviceStopFailed: (stderr: string) => `✗ 停止に失敗しました:\n${stderr}`,
+  serviceBotStoppedNamed: (botName: string | undefined, appId: string) =>
+    `✓ bot ${botName} (${appId}) を停止しました`,
+  serviceBotStopped: '✓ bot を停止しました',
+  serviceRestartHint: '  `start` で再度起動できます',
+  serviceNeverRanRestart:
+    'bot はまだバックグラウンドで実行されたことがありません。先に `start` を実行してください。',
+  statusNeverStarted: 'bot は現在バックグラウンドで実行されていません(まだ起動されていません)',
+  statusStartHint: '  `start` で bot を起動してください',
+  statusNotRunning: 'bot は現在バックグラウンドで実行されていません',
+  statusRestartHint: '  `start` で再度起動してください',
+  statusRunningNamed: (botName: string | undefined, appId: string) =>
+    `✓ bot ${botName} (${appId}) はバックグラウンドで実行中です`,
+  statusRunning: '✓ bot はバックグラウンドで実行中です',
+  statusPid: (pid: string) => `  プロセス ID: ${pid}`,
+  statusLogsLabel: '  ログ:',
+  statusLastExit: (code: string) => `  前回の終了コード: ${code}`,
+  serviceNeverRanNoCleanup:
+    'bot はまだバックグラウンドで実行されたことがないため、クリーンアップは不要です。',
+  serviceStopWarnCleanup: (stderr: string) =>
+    `⚠ bot の停止時に警告がありました(クリーンアップを続行します):\n${stderr}`,
+  serviceBotStoppedShort: '✓ bot を停止しました',
+  serviceUnregistered: '✓ バックグラウンド実行の登録をクリアしました',
+  serviceUnregisteredKeep: (dir: string) => `  (設定 / ログ / セッションは ${dir} に保持されます)`,
+
+  // ── start (foreground run) ──
+  shutdownSignal: (sig: string) => `\n${sig} を受信しました。シャットダウンしています...`,
+  reconnectedNewCreds: '✓ 新しい認証情報で再接続しました',
+  conflictDetected: (count: number) =>
+    `⚠️  この Feishu アプリでは既に ${count} 個の bot が実行中です:`,
+  conflictEntry: (label: string, procId: string, ago: string) =>
+    `   - ${label}、プロセス ${procId}、${ago}に起動`,
+  conflictNonInteractive:
+    '⚠️  対話モードでの起動ではないため、自動的にキャンセルしました。置き換える場合は、先に `kill <bot id>` で古いものを停止してください。\n',
+  confirmKillConflicts: (count: number): string =>
+    count > 1
+      ? `続行するとそれらを先に停止します。続行しますか? [y/N]: `
+      : `続行するとそれを先に停止します。続行しますか? [y/N]: `,
+  killedConflict: (id: string) => `✓ bot ${id} を停止しました`,
+  killConflictFailed: (id: string, message: string) =>
+    `✗ bot ${id} の停止に失敗しました: ${message}`,
+  confirmStopOldRestart: '古いプロセスを停止して再起動しますか? [y/N]: ',
+  lockNonInteractiveStopError: (kind: 'profile' | 'app') =>
+    `この ${kind} は既に別の bridge プロセスが使用中です。` +
+    '非対話モードでは停止を確認できないため、先に `lark-channel-bridge ps` で確認し、`lark-channel-bridge kill <bot id>` で停止してから再試行してください',
+  agoSeconds: (n: number) => `${n} 秒前`,
+  agoMinutes: (n: number) => `${n} 分前`,
+  agoHours: (n: number) => `${n} 時間前`,
+  agoDays: (n: number) => `${n} 日前`,
+
+  // ── migrate ──
+  migrateProfileUpgraded: (profile: string) =>
+    `✓ profile のディレクトリ構造をアップグレードしました: ${profile}`,
+  migrateProfileUpToDate: (profile: string) =>
+    `✓ profile のディレクトリ構造は最新です: ${profile}`,
+  migrateCancelled: '移行をキャンセルしました。',
+  migrateBridgeRunning: 'bridge が実行中です。移行には先にこれらのプロセスの停止が必要です:',
+  migrateNonInteractiveError:
+    'bridge が実行中です。非対話モードでは停止を確認できないため、先に停止してから移行を再試行してください',
+  migrateConfirmStop: 'これらのプロセスを停止して移行を続けますか? [y/N]: ',
+  migrateStoppingProcess: (desc: string) => `${desc} を停止しています...`,
+  migrateConfigMissing: '  config.json が存在しないため、構造移行をスキップします',
+  migrateConfigInvalidJson: (path: string) => `✗ config が有効な JSON ではありません (${path}):`,
+  migrateConfigAlreadyV2: (path: string) => `✓ config は既に profile v2 形式です: ${path}`,
+  migrateConfigAlreadyNew: (path: string) => `✓ config は既に新形式です: ${path}`,
+  migrateConfigUpgraded: (path: string) => `✓ config の構造をアップグレードしました: ${path}`,
+  migrateConfigUnrecognized: (path: string) => `✗ 認識できない config 形式です: ${path}`,
+  migrateConfigExpectedShape:
+    '  期待される形式: { app: { id, secret, tenant } } または { accounts: { app: ... } }',
+  migrateMovedConfig: (from: string, to: string) => `✓ 設定を移動しました: ${from} → ${to}`,
+  migrateMovedCache: (from: string, to: string) => `✓ キャッシュを移動しました: ${from} → ${to}`,
+  migrateSkipExisting: (name: string) => `  · ${name} をスキップしました(移動先が既に存在します)`,
+
+  // ── ps / kill ──
+  psNoneRunning: '現在実行中の bot はありません。',
+  psRunningCount: (n: number) => `# 現在 ${n} 個の bot が実行中\n`,
+  psHeaderStarted: '起動',
+  psHeaderVersion: 'バージョン',
+  killUsage: '使い方: lark-channel-bridge kill <bot id または番号>',
+  killNotFound: (target: string) => `✗ 一致する bot が見つかりません: ${target}`,
+  killSeeTargets: '  `lark-channel-bridge ps` で対象を確認してください。',
+  killClosing: (id: string) => `bot ${id} を停止しています…`,
+  killFailed: (message: string) => `✗ 停止に失敗しました: ${message}`,
+  killForceClosed: (id: string) => `✓ bot ${id} を強制停止しました。`,
+  killClosed: (id: string) => `✓ bot ${id} を停止しました。`,
+  psAgoSeconds: (n: number) => `${n}s 前`,
+  psAgoMinutes: (n: number) => `${n}m 前`,
+  psAgoHours: (n: number) => `${n}h 前`,
+  psAgoDays: (n: number) => `${n}d 前`,
+
+  // ── secrets ──
+  secretsSetUsage: '使い方: lark-channel-bridge secrets set --app-id <id>',
+  secretsCancelledEmpty: '✗ キャンセルしました(secret が空です)',
+  secretsSavedEncrypted: '✓ 暗号化して ~/.lark-channel/secrets.enc に保存しました',
+  secretsNoneStored: '暗号化ストレージに secret はありません。',
+  secretsCount: (n: number) => `# 暗号化ストレージに ${n} 個の secret があります\n`,
+  secretsRemoveUsage: '使い方: lark-channel-bridge secrets remove --app-id <id>',
+  secretsNotFound: (id: string) => `✗ secret が見つかりません: ${id}`,
+  secretsRemoved: (id: string) => `✓ ${id} を削除しました`,
+
+  // ── profile ──
+  profileNone: 'profile はまだありません。',
+  profileCreated: (name: string) => `profile を作成しました: ${name}`,
+  profileSwitched: (name: string) => `profile を切り替えました: ${name}`,
+  profilePurged: (name: string) => `profile を完全に削除しました: ${name}`,
+  profileArchived: (name: string, archivedTo: string | undefined) =>
+    `profile をアーカイブしました: ${name} -> ${archivedTo}`,
+  profileExported: (name: string, output: string) =>
+    `profile をエクスポートしました: ${name} -> ${output}`,
+
+  // ── registration wizard ──
+  wizardIntro: '\nFeishu アプリの設定が見つからないため、QR コード作成ウィザードを開始します。\n',
+  wizardScanQr: 'Feishu アプリで以下の QR コードをスキャンして、アプリの作成を完了してください:\n',
+  wizardQrExpiry: (mins: number) => `\nQR コードの有効期限: 約 ${mins} 分`,
+  wizardOpenInBrowser: (url: string) => `ブラウザで直接開くこともできます: ${url}\n`,
+  wizardDomainSwitched: '国際版テナントを検出したため、larksuite.com ドメインに切り替えました。',
+  wizardSlowDown: 'ポーリングが速すぎるため、自動的に減速しました。',
+  wizardAppCreated: '\n✓ アプリを作成しました',
+  wizardCreatorExempt: (openId: string) =>
+    `  Creator: ${openId} (Lark アプリ owner のため、アクセス制御を自動的に免除)`,
+  wizardNoOpenIdOwnerApi:
+    '  ⚠️ QR コードをスキャンしたユーザーの open_id を取得できませんでした。起動後にアプリ owner API で作成者を解決します。',
+  wizardCreatorExemptAll: (openId: string) =>
+    `  Creator: ${openId} (Lark アプリ owner のため、すべてのアクセス制御を自動的に免除)`,
+  wizardNoOpenIdOwnerApiV6:
+    '  ⚠️ QR コードをスキャンしたユーザーの open_id を取得できませんでした。初回起動時に bridge が application/v6 API を呼び出して現在の owner を解決します。',
+
+  // ── profile runtime bootstrap ──
+  configSaved: (path: string) => `設定を ${path} に保存しました\n`,
+  bootstrapNoConfigNonInteractive:
+    '設定が見つからず、非対話モードでは QR コードによるアプリ作成ウィザードを完了できません。' +
+    '先にターミナルで `lark-channel-bridge run` を実行して初回セットアップを完了するか、' +
+    '--app-id と --app-secret を渡してください。',
+  bootstrapMissingSecretNonInteractive: (appId: string) =>
+    `非対話モードで App Secret がありません: ${appId}。` +
+    '--app-secret <secret> を渡すか、ターミナルでコマンドを再実行してプロンプトに従って入力してください。',
+  credentialsValidatedNamed: (botName: string) => `✓ アプリ認証情報の検証に成功しました: ${botName}`,
+  credentialsValidated: '✓ アプリ認証情報の検証に成功しました',
+  ambiguousAgentsHeader:
+    '複数のローカル agent を検出しました。--agent <claude|codex> で初期化する agent を指定してください。',
+  ambiguousAgentsDetectedLabel: '検出済み:',
+  selectAgentIntro: 'ローカル agent の選択',
+  selectAgentMessage: '複数のローカル agent を検出しました。今回はどれを初期化しますか?',
+  agentSelectionCancelled: 'agent の選択をキャンセルしました。',
+  agentSelected: (name: string) => `${name} を選択しました`,
+  secretMigratedToKeystore: '🔒 App Secret を暗号化して ~/.lark-channel/secrets.enc に移行しました',
+  secretsProviderWrapperMigrated: '🔒 secrets provider を wrapper 形式に切り替えました',
+
+  // ── agent preflight diagnostics ──
+  preflightBinaryNotFound: (agentName: string, code: string) =>
+    [
+      `✗ ローカルの ${agentName} が見つかりません。`,
+      '',
+      `先に ${agentName} をインストールするか、正しい実行ファイルのパスを設定してください。`,
+      `エラーコード: ${code}`,
+    ].join('\n'),
+  preflightBinaryNotExecutable: (agentName: string, code: string) =>
+    [
+      `✗ ローカルの ${agentName} を実行できません。`,
+      '',
+      `実行権限を確認するか、${agentName} を再インストールしてください。`,
+      `エラーコード: ${code}`,
+    ].join('\n'),
+  preflightBinaryResolveFailed: (agentName: string, code: string) =>
+    [
+      `✗ ローカルの ${agentName} のパス解決に失敗しました。`,
+      '',
+      '現在設定されている実行ファイルのパスが有効であることを確認してから、bridge を再実行してください。',
+      `エラーコード: ${code}`,
+    ].join('\n'),
+  preflightBinaryNotReadable: (agentName: string, code: string) =>
+    [
+      `✗ ローカルの ${agentName} バイナリを読み取れません。`,
+      '',
+      `ファイルの権限を確認するか、${agentName} を再インストールしてください。`,
+      `エラーコード: ${code}`,
+    ].join('\n'),
+  preflightSpawnFailed: (agentName: string, command: string, code: string) =>
+    [
+      `✗ ローカルの ${agentName} を利用できません: \`${command}\` を実行できませんでした。`,
+      '',
+      '先にターミナルで同じコマンドを実行し、エラーを修正してください。',
+      `エラーコード: ${code}`,
+    ].join('\n'),
+  preflightTimeout: (agentName: string, command: string, code: string) =>
+    [
+      `✗ ローカルの ${agentName} を利用できません: \`${command}\` がタイムアウトしました。`,
+      '',
+      '先にこのコマンドが正常に終了することを確認してください。',
+      `エラーコード: ${code}`,
+    ].join('\n'),
+  preflightSignaled: (agentName: string, command: string, signal: string, code: string) =>
+    [
+      `✗ ローカルの ${agentName} を利用できません: \`${command}\` の実行がシステムに終了させられました (${signal})。`,
+      '',
+      '先にターミナルで確認してください:',
+      `  ${command}`,
+      '',
+      `ローカルの ${agentName} を修復してから、bridge を再実行してください。`,
+      `エラーコード: ${code}`,
+    ].join('\n'),
+  preflightNonzeroExit: (agentName: string, command: string, exitCode: string | number, code: string) =>
+    [
+      `✗ ローカルの ${agentName} を利用できません: \`${command}\` の終了コードは ${exitCode} でした。`,
+      '',
+      '先にターミナルで同じコマンドを実行し、エラーを修正してください。',
+      `エラーコード: ${code}`,
+    ].join('\n'),
+  preflightEmptyOutput: (agentName: string, command: string, code: string) =>
+    [
+      `✗ ローカルの ${agentName} を利用できません: \`${command}\` がバージョン情報を返しませんでした。`,
+      '',
+      `サポートされている ${agentName} がインストールされていることを確認してください。`,
+      `エラーコード: ${code}`,
+    ].join('\n'),
+
+  // ── daemon banner (logger stdout) ──
+  wsConnected: (bot: string, appIdSuffix: string, agent: string, procSuffix: string) =>
+    `✓ 接続しました  bot: ${bot}${appIdSuffix}  agent: ${agent}${procSuffix}`,
+  wsConnectedProc: (procId: string) => `  プロセス: ${procId}`,
+  wsReconnecting: '↻ 再接続しています…',
+  wsReconnected: '✓ 再接続しました',
+  wsError: (err: string) => `✗ WS エラー: ${err}`,
+
+  // ── feishu auth validation ──
+  networkError: (message: string) => `ネットワークエラー: ${message}`,
+  invalidJsonResponse: 'レスポンスが有効な JSON ではありません',
+
+  // ── codex session history ──
+  emptySessionPreview: '(空のセッション)',
+};

@@ -12,16 +12,16 @@
  * Catalog layout: one namespace per module cluster under src/i18n/catalog/.
  * zh-CN is the source of truth — the en catalog must satisfy `typeof <zh>`.
  */
-import { commandsZh, commandsEn } from './catalog/commands';
-import { cardsZh, cardsEn } from './catalog/cards';
-import { botZh, botEn } from './catalog/bot';
-import { cliZh, cliEn } from './catalog/cli';
-import { policyZh, policyEn } from './catalog/policy';
+import { commandsZh, commandsEn, commandsJa } from './catalog/commands';
+import { cardsZh, cardsEn, cardsJa } from './catalog/cards';
+import { botZh, botEn, botJa } from './catalog/bot';
+import { cliZh, cliEn, cliJa } from './catalog/cli';
+import { policyZh, policyEn, policyJa } from './catalog/policy';
 
-export type Locale = 'zh-CN' | 'en-US';
+export type Locale = 'zh-CN' | 'en-US' | 'ja-JP';
 
 export const DEFAULT_LOCALE: Locale = 'zh-CN';
-export const SUPPORTED_LOCALES: readonly Locale[] = ['zh-CN', 'en-US'];
+export const SUPPORTED_LOCALES: readonly Locale[] = ['zh-CN', 'en-US', 'ja-JP'];
 
 /** Loose input (config value, LANG env, BCP-47-ish) → supported locale. */
 export function normalizeLocale(raw: string | undefined | null): Locale | undefined {
@@ -29,6 +29,7 @@ export function normalizeLocale(raw: string | undefined | null): Locale | undefi
   const v = raw.trim().toLowerCase().replace(/_/g, '-');
   if (v === 'zh' || v.startsWith('zh-')) return 'zh-CN';
   if (v === 'en' || v.startsWith('en-')) return 'en-US';
+  if (v === 'ja' || v.startsWith('ja-')) return 'ja-JP';
   return undefined;
 }
 
@@ -50,6 +51,20 @@ export const enUS: Messages = {
   policy: policyEn,
 };
 
+export const jaJP: Messages = {
+  commands: commandsJa,
+  cards: cardsJa,
+  bot: botJa,
+  cli: cliJa,
+  policy: policyJa,
+};
+
+const catalogs: Record<Locale, Messages> = {
+  'zh-CN': zhCN,
+  'en-US': enUS,
+  'ja-JP': jaJP,
+};
+
 let active: Locale = DEFAULT_LOCALE;
 
 export function setActiveLocale(locale: Locale): void {
@@ -63,5 +78,5 @@ export function activeLocale(): Locale {
 /** The active catalog. Grab fresh per render — don't cache across awaits
  * that may span a /config language change. */
 export function msgs(): Messages {
-  return active === 'en-US' ? enUS : zhCN;
+  return catalogs[active];
 }

@@ -342,3 +342,176 @@ export const commandsEn: typeof commandsZh = {
   configFailPolicyNotApplied: 'lark-cli identity policy not applied; nothing was changed.',
   configFailNotWritten: 'Config not written; nothing was changed.',
 };
+
+export const commandsJa: typeof commandsZh = {
+  // ── dispatch / shared ──
+  auditSafeReply: 'コマンドを処理しました。',
+  resumeApplied: '完了しました。次のメッセージを送って続けてください。',
+  adminOnly: '❌ このコマンドは管理者専用です。',
+
+  // ── /new ──
+  newSessionInterrupted: '現在のタスクを中断し、新しいセッションを開始しました。',
+  newSessionStarted: '新しいセッションを開始しました。',
+  createChatFailed: (msg: string) =>
+    `❌ グループの作成に失敗しました：${msg}\n\nbot の \`im:chat\` 権限が有効になっているか確認してください。`,
+  newChatWelcomeWithCwd: (cwd: string) =>
+    `🎉 グループを作成しました。cwd は元のグループから継承：\`${cwd}\`\n\nbot を@メンションして任意のメッセージを送ると、会話を開始できます。`,
+  newChatWelcome: '🎉 グループを作成しました。\n\nbot を@メンションして任意のメッセージを送ると、会話を開始できます。',
+  chatCreated: (name: string) => `✓ グループ **${name}** を作成しました。新しいグループで続けてください。`,
+
+  // ── /cd ──
+  cdUsage: '使い方：`/cd <絶対パス>` または `/cd ~/xxx`',
+  cdNeedAbsolutePath: '絶対パス、または home 配下を表す `~/xxx` を使用してください。',
+  cdSwitched: (cwd: string) => `✓ cwd を \`${cwd}\` に切り替えました\n（session はリセット済み）`,
+
+  // ── /ws ──
+  wsUsage: '使い方：`/ws [list|save <name>|use <name>|remove <name>]`',
+  wsSaveUsage: '使い方：`/ws save <name>`',
+  wsSaveNoCwd: 'この chat には cwd が未設定です。先に `/cd` で設定してから保存してください。',
+  wsSaved: (name: string, cwd: string) => `✓ ワークスペースのエイリアスを保存しました：\`${name}\` → ${cwd}`,
+  wsUseUsage: '使い方：`/ws use <name>`',
+  wsAliasNotFound: (name: string) => `ワークスペースのエイリアスが見つかりません：\`${name}\``,
+  wsSwitched: (name: string, cwd: string) =>
+    `✓ \`${name}\` (${cwd}) に切り替えました\n（session はリセット済み）`,
+  wsRemoveUsage: '使い方：`/ws remove <name>`',
+  wsRemoved: (name: string) => `✓ ワークスペースのエイリアスを削除しました：\`${name}\``,
+
+  // ── /doc ──
+  docCommentInfo:
+    'ドキュメントのコメントはワークスペースのバインドが不要になりました。対応ドキュメントのコメントで bot を@メンションすると返信がトリガーされます。',
+
+  // ── /resume ──
+  resumeNeedCwd: '先に /cd <path> で作業ディレクトリを選択してから、セッションの表示・復元を行ってください。',
+  resumeGroupHidden:
+    'グループチャットではセッション履歴の詳細を表示しません。bot に DM で `/resume` を送って表示・選択してください。',
+  resumeCodexAvailable: (nonce: string) =>
+    `現在の Codex thread は復元できます。\n\`/resume use ${nonce}\` で復元してください（10 分間有効）。`,
+  resumeCodexCandidateInvalid:
+    '現在のコンテキストではこのセッションを復元できません。先に `/resume` で復元候補を再生成してください。',
+  resumeContextMismatch:
+    '現在のコンテキストではこのセッションを復元できません。現在のワークスペースと権限ポリシーのセッションを選び直してください。',
+  resumeNoCodexThread:
+    '現在のコンテキストに復元可能な Codex thread がありません。先に現在のワークスペースで一度実行を完了してください。',
+
+  // ── /status ──
+  statusSessionNotEstablished: '(未確立)',
+
+  // ── /stop ──
+  stopScopeAdminOnly: '❌ scope を指定したタスク停止は管理者専用です。',
+  stopRequested: (scope: string) => `\`${scope}\` の停止をリクエストしました。`,
+  stopNotFound: (scope: string) => `実行中のタスクが見つかりません：\`${scope}\`。`,
+
+  // ── /timeout ──
+  timeoutScopeAdminOnly: '❌ scope を指定した timeout 設定は管理者専用です。',
+  timeoutMinutes: (n: number) => `${n} 分`,
+  timeoutGlobalDisabled: '無効',
+  timeoutUsage:
+    '\n\n使い方:\n- `/timeout 15` 現在の session を 15 分に設定\n- `/timeout off` 現在の session のアイドル監視を無効化\n- `/timeout default` session の上書きを解除してグローバル設定に戻す\n- `/timeout comment:<scopeHash> 15` 管理者が comment scope を設定\n\n_注: `/new` は現在の session の上書きを解除し、グローバル設定に戻します_',
+  timeoutOffForSession: '無効（現在の session）',
+  timeoutStatusOverride: (scopeLabel: string, effective: string, globalText: string) =>
+    `⏱ 現在の session${scopeLabel} のアイドル監視:${effective}\nグローバル既定:${globalText}`,
+  timeoutStatusGlobal: (scopeLabel: string, globalText: string) =>
+    `⏱ 現在の session${scopeLabel} のアイドル監視:グローバル設定に従う(${globalText})`,
+  timeoutCleared: (globalText: string) =>
+    `✅ session の上書きを解除し、グローバル設定(${globalText})に戻しました。`,
+  timeoutNoOverride: (globalText: string) =>
+    `現在の session に上書きはもともと設定されておらず、グローバル設定(${globalText})に従っています。`,
+  timeoutDisabled: '✅ 現在の session のアイドル監視を無効化しました。',
+  timeoutInvalid: '❌ 使い方:`/timeout <1-120>` / `/timeout off` / `/timeout default`',
+  timeoutSet: (n: number) => `✅ 現在の session のアイドル監視を ${n} 分に設定しました。`,
+
+  // ── /ps ──
+  psNoBots: '実行中の bot はありません(理論上あり得ません。あなたはそのうちの 1 つと会話中です…)',
+  psTableHeader: '| # | ID | Bot | 起動 |',
+  psCurrentMarker: ' ← 現在応答中',
+  psTitle: (count: number) => `🧭 **現在 ${count} 個の bot が実行中**`,
+  psFooter: (processId: string) =>
+    `\`/exit <id|#>\` でいずれかを終了できます。\`/exit ${processId}\` は現在応答中のこの bot を終了します。`,
+  agoSeconds: (n: number) => `${n}s 前`,
+  agoMinutes: (n: number) => `${n}m 前`,
+  agoHours: (n: number) => `${n}h 前`,
+  agoDays: (n: number) => `${n}d 前`,
+
+  // ── /exit ──
+  exitUsage: (processId: string) =>
+    `使い方:\`/exit <id|#>\` —— \`id\` は \`/ps\` に表示される短い id、\`#\` は行番号です。\n現在応答中の bot は \`${processId}\` です。`,
+  exitNotFound: (target: string) =>
+    `❌ 一致する bot が見つかりません:\`${target}\`。\`/ps\` で対象を確認してください。`,
+  exitSelf: (id: string) => `👋 現在の bot \`${id}\` をまもなく終了します。さようなら。`,
+  exitFailed: (id: string, message: string) => `❌ bot \`${id}\` の終了に失敗しました:${message}`,
+  exitPending: (id: string) =>
+    `📨 \`${id}\` の終了をリクエストしましたが、まだ後処理中です。もう一度 \`/ps\` で確認してください。`,
+  exitClosed: (id: string) => `✓ bot \`${id}\` を終了しました。`,
+
+  // ── /reconnect ──
+  reconnectAfterRun: '⏳ 現在の実行が終了した後に再接続します…',
+  reconnectNow: '⏳ 現在の実行を停止して再接続しています…',
+  reconnectFailed: (msg: string) => `❌ 再接続に失敗しました:${msg}`,
+
+  // ── /doctor ──
+  doctorRateLimited: 'doctor rate limited: 同一ユーザーは 30 秒に 1 回のみ実行できます。',
+  doctorNoWorkspace:
+    '作業ディレクトリが未設定です。先に `/cd <path>` または `/ws use <name>` で作業ディレクトリを選択してから agent echo check を実行してください。',
+  doctorWorkspaceUnavailable: (userVisible: string) =>
+    `${userVisible} 作業ディレクトリが利用できない場合は self-check のみを実行し、agent は起動しません。`,
+  doctorInFlight: 'doctor in-flight: この profile では診断がすでに実行中です。',
+  doctorAck: '🔍 診断リクエストを受け付けました。分析結果は DM でお送りします。',
+  doctorWorkspaceUnset: '(未設定)',
+
+  // ── /account ──
+  accountUsage: '使い方：`/account` または `/account change`',
+  accountEmptyCredentials: 'App ID または App Secret が空です',
+  accountSaveFailed: (msg: string) => `認証情報の保存に失敗しました：${msg}`,
+
+  // ── /invite ──
+  inviteNoKnownChats: 'bot はまだどのグループにも参加しておらず、追加できるグループがありません。',
+  inviteAllGroupsAdded: (added: number, total: number) =>
+    `✅ bot が参加している ${added} 個のグループを応答許可リストに追加しました（全 ${total} 個）。`,
+  inviteUsage:
+    '使い方：\n• `/invite user @ユーザー` — DM を許可\n• `/invite admin @ユーザー` — 管理者に追加\n• `/invite group` — 現在のグループを応答許可リストに追加\n• `/invite all group` — bot が参加している全グループを一括追加',
+  inviteGroupInP2p: '❌ `/invite group` はグループ内でのみ送信できます。DM には追加できる chat_id がありません。',
+  inviteGroupAlready: '✅ 現在のグループはすでに許可リストにあります。重複追加は不要です。',
+  inviteGroupAdded: (chatId: string) => `✅ 現在のグループ（\`${chatId}\`）を応答許可リストに追加しました。`,
+  inviteNoMention: (kind: string) =>
+    `❌ @メンションされたユーザーが見つかりません。次のように送ってください：\`/invite ${kind} @ユーザー\`（bot ではなくユーザーを @ してください）。`,
+  accessLabelUsers: 'ユーザー許可リスト',
+  accessLabelAdmins: '管理者リスト',
+  inviteAdded: (names: string[], label: string) => `✅ ${names.join('、')} を${label}に追加しました。`,
+  inviteAlreadyIn: (names: string[], label: string) =>
+    `_${names.join('、')} はすでに${label}にいるため、スキップしました。_`,
+
+  // ── /remove ──
+  removeUsage:
+    '使い方：\n• `/remove user @ユーザー` — ユーザー許可リストから削除\n• `/remove admin @ユーザー` — 管理者リストから削除\n• `/remove group` — 現在のグループを応答許可リストから削除',
+  removeGroupInP2p: '`/remove group` は削除したいグループ内で送信してください。DM には削除できるグループがありません。',
+  removeGroupNotIn: '✅ 現在のグループはもともと応答許可リストにないため、削除は不要です。',
+  removeGroupDone: '✅ 現在のグループを応答許可リストから削除しました。',
+  removeNoMention: (kind: string) => `削除する相手を @ してください。例：\`/remove ${kind} @ユーザー\`。`,
+  removeRemoved: (names: string[], label: string) =>
+    `✅ ${names.join('、')} を${label}から削除しました。`,
+  removeNotThere: (names: string[], label: string) =>
+    `${names.join('、')} はもともと${label}にいないため、削除は不要です。`,
+
+  // ── /mention ──
+  mentionUsage:
+    '使い方：\n• `/mention group on` — 現在のグループでは @bot が必要\n• `/mention group off` — 現在のグループを専用グループとして @ 不要に設定（通常メッセージでもトリガー。複数 bot がいるグループでは非推奨）\n• `/mention group default` — 現在のグループは `/config` のグローバル設定に従う',
+  mentionGroupInP2p: '`/mention group` は設定したいグループ内で送信してください。DM には変更できるグループポリシーがありません。',
+  mentionRequireLabel: '@bot が必要',
+  mentionExemptShort: '専用グループ・@ 不要',
+  mentionExemptLabel: '専用グループ・@ 不要（通常メッセージでもトリガー）',
+  mentionResetToDefault: (label: string) =>
+    `✅ 現在のグループはグローバル設定に従う状態に戻しました（グローバル既定）：${label}。`,
+  mentionMultiBotWarning:
+    '\n\n⚠️ このグループに複数の bot がいる場合、@ 不要の有効化は推奨しません。通常メッセージで複数の bot が同時に応答する可能性があります。',
+  mentionSet: (label: string, warning: string) =>
+    `✅ 現在のグループを次のとおり設定しました：${label}。これは現在のグループのみに影響し、/config のグローバル既定値は変更しません。${warning}`,
+
+  // ── /config ──
+  configUsage: '使い方:`/config`',
+  configFailRollbackFailed:
+    '保存に失敗し、さらに lark-cli アイデンティティポリシーのロールバックにも失敗しました。/status で現在の状態を確認してください。',
+  configFailRolledBack:
+    '保存に失敗したため、lark-cli アイデンティティポリシーをロールバックしました。/config を開き直して現在の状態を確認してください。',
+  configFailPolicyNotApplied: 'lark-cli アイデンティティポリシーが適用されなかったため、何も変更していません。',
+  configFailNotWritten: '設定は書き込まれず、何も変更していません。',
+};

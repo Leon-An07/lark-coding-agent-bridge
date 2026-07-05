@@ -2,11 +2,12 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mkdtemp } from 'node:fs/promises';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   materializeEnvSecretForService,
   resolveProfileRuntime,
 } from '../../../src/runtime/profile-runtime';
+import { DEFAULT_LOCALE, setActiveLocale } from '../../../src/i18n';
 import { createDefaultProfileConfig } from '../../../src/config/profile-schema';
 import { resolveAppPaths } from '../../../src/config/app-paths';
 import { getSecret } from '../../../src/config/keystore';
@@ -14,6 +15,21 @@ import { secretKeyForApp } from '../../../src/config/schema';
 import { legacyLarkCliSourceOverlayPaths } from '../../../src/lark-cli/legacy-source-overlay';
 import { writeLarkCliSourceProjection } from '../../../src/lark-cli/profile-projection';
 import { writeVersionExecutable } from '../../helpers/fake-executable';
+
+// resolveProfileRuntime falls back to LANG for its error-message locale when
+// config load fails; pin the environment so the zh assertions below don't
+// depend on the developer's shell locale (e.g. LANG=ja_JP.UTF-8).
+let savedLang: string | undefined;
+beforeEach(() => {
+  savedLang = process.env.LANG;
+  process.env.LANG = 'zh_CN.UTF-8';
+  setActiveLocale(DEFAULT_LOCALE);
+});
+afterEach(() => {
+  if (savedLang === undefined) delete process.env.LANG;
+  else process.env.LANG = savedLang;
+  setActiveLocale(DEFAULT_LOCALE);
+});
 
 const wizard = vi.hoisted(() => ({
   next: {

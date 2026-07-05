@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   BRIDGE_SYSTEM_PROMPT,
   BRIDGE_SYSTEM_PROMPT_EN,
+  BRIDGE_SYSTEM_PROMPT_JA,
   buildBridgeSystemPrompt,
   prefixBridgeSystemPrompt,
 } from '../../../src/agent/bridge-system-prompt';
@@ -99,20 +100,26 @@ describe('locale variants of the bridge system prompt', () => {
     setActiveLocale(DEFAULT_LOCALE);
   });
 
-  it('instructs replying in the language the user writes in, in both variants', () => {
+  it('instructs replying in the language the user writes in, in all variants', () => {
     expect(BRIDGE_SYSTEM_PROMPT).toContain('回复语言跟随用户');
     expect(BRIDGE_SYSTEM_PROMPT).toContain('始终使用用户消息所用的语言回复');
     expect(BRIDGE_SYSTEM_PROMPT_EN).toContain('Reply language follows the user');
     expect(BRIDGE_SYSTEM_PROMPT_EN).toContain(
       'always reply in the language the user writes in',
     );
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain('返信言語はユーザーに合わせる');
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain(
+      '常にユーザーのメッセージで使われている言語で返信してください',
+    );
   });
 
   it('keeps machine-readable fenced blocks byte-identical across variants', () => {
     const zhFences = extractFences(BRIDGE_SYSTEM_PROMPT);
     const enFences = extractFences(BRIDGE_SYSTEM_PROMPT_EN);
+    const jaFences = extractFences(BRIDGE_SYSTEM_PROMPT_JA);
     expect(zhFences.length).toBeGreaterThan(0);
     expect(enFences).toEqual(zhFences);
+    expect(jaFences).toEqual(zhFences);
   });
 
   it('keeps the send-card contract markers in the en variant', () => {
@@ -122,6 +129,25 @@ describe('locale variants of the bridge system prompt', () => {
     expect(BRIDGE_SYSTEM_PROMPT_EN).toContain(
       'lark-channel-bridge send-card --chat-id <oc_xxx> --operator <ou_xxx|*> --file card.json',
     );
+  });
+
+  it('keeps the send-card contract markers in the ja variant', () => {
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain('__bridge_cb');
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain('```lark-card```');
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain('[card-click]');
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain(
+      'lark-channel-bridge send-card --chat-id <oc_xxx> --operator <ou_xxx|*> --file card.json',
+    );
+  });
+
+  it('keeps the env-var and OAuth contract markers in the ja variant', () => {
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain('LARK_CHANNEL_HOME');
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain('LARKSUITE_CLI_CONFIG_DIR');
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain(
+      'lark-cli auth login --no-wait --json [--recommend | --domain ... | --scope ...]',
+    );
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain('lark-cli auth login --device-code <code>');
+    expect(BRIDGE_SYSTEM_PROMPT_JA).toContain('/stop');
   });
 
   it('selects the en variant at call time when the active locale is en-US', () => {
@@ -140,8 +166,31 @@ describe('locale variants of the bridge system prompt', () => {
     expect(wrapped.endsWith('hello world')).toBe(true);
   });
 
+  it('selects the ja variant at call time when the active locale is ja-JP', () => {
+    setActiveLocale('ja-JP');
+    expect(buildBridgeSystemPrompt(undefined)).toBe(BRIDGE_SYSTEM_PROMPT_JA);
+
+    const withIdentity = buildBridgeSystemPrompt({ openId: 'ou_bot_self', name: 'ニモ' });
+    expect(withIdentity.startsWith(BRIDGE_SYSTEM_PROMPT_JA)).toBe(true);
+    expect(withIdentity).toContain('## あなたのアイデンティティ');
+    expect(withIdentity).toContain('ou_bot_self');
+    expect(withIdentity).toContain('ニモ');
+
+    const withoutName = buildBridgeSystemPrompt({ openId: 'ou_bot_self' });
+    expect(withoutName).toContain('ou_bot_self');
+
+    const wrapped = prefixBridgeSystemPrompt('hello world', undefined);
+    expect(wrapped.startsWith(BRIDGE_SYSTEM_PROMPT_JA)).toBe(true);
+    expect(wrapped).toContain('## user_message');
+    expect(wrapped.endsWith('hello world')).toBe(true);
+  });
+
   it('returns to the zh variant after the locale is reset', () => {
     setActiveLocale('en-US');
+    setActiveLocale(DEFAULT_LOCALE);
+    expect(buildBridgeSystemPrompt(undefined)).toBe(BRIDGE_SYSTEM_PROMPT);
+
+    setActiveLocale('ja-JP');
     setActiveLocale(DEFAULT_LOCALE);
     expect(buildBridgeSystemPrompt(undefined)).toBe(BRIDGE_SYSTEM_PROMPT);
   });

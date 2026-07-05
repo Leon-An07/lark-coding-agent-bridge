@@ -97,6 +97,7 @@ export const cardsZh = {
   languageHeading: '\n**语言 / Language**\n_影响 bot 回复、卡片与命令输出的语言_',
   langOptionZh: '中文',
   langOptionEn: 'English',
+  langOptionJa: '日本語',
   accessPanelTitle: '🔒 **访问控制**（点击展开）',
   configSavedSummary: '偏好已保存',
   emptyList: '_(空)_',
@@ -364,6 +365,7 @@ export const cardsEn: typeof cardsZh = {
   languageHeading: '\n**Language**\n_Language for bot replies, cards and command output_',
   langOptionZh: '中文',
   langOptionEn: 'English',
+  langOptionJa: '日本語',
   accessPanelTitle: '🔒 **Access control** (click to expand)',
   configSavedSummary: 'Preferences saved',
   emptyList: '_(empty)_',
@@ -535,4 +537,273 @@ export const cardsEn: typeof cardsZh = {
   toolRunningBody: '_running…_',
   toolBodyTruncated: (body: string) =>
     `${body}…\n\n_(body truncated — see \`/doctor\` or the log for the full content)_`,
+};
+
+export const cardsJa: typeof cardsZh = {
+  // ── shared ──
+  submit: '送信',
+  cancel: 'キャンセル',
+  cancelledSummary: 'キャンセル済み',
+  doneLabel: '完了',
+  currentMarker: '  ← 現在',
+  notSet: '(未設定)',
+  workspacesLabel: '📂 ワークスペース',
+  btnNewSession: '🆕 新規セッション',
+  btnResume: '🔁 セッション再開',
+  btnHelp: '💡 ヘルプ',
+  btnStatus: '📊 ステータス',
+
+  // ── config-card.ts ──
+  noneMarker: '_（なし）_',
+  unknownChat: '(不明なグループ)',
+  chatListItem: (name: string, idSuffix: string) => `- **${name}**（...${idSuffix}）`,
+  noOverrides: '_（なし。すべてグローバル設定に従います）_',
+  mentionOverrideItem: (name: string, idSuffix: string, required: boolean) =>
+    `- **${name}**（...${idSuffix}）：${required ? '@bot が必要' : '@bot 不要'}`,
+  accessIntro:
+    '_DM とグループチャットで bot を使えるユーザーを制御します。**空欄 = チャットメッセージに応答しません**。ドキュメントコメントはドキュメントの権限に従います。_',
+  accessAllowedUsers: (count: number, mentionLine: string) =>
+    `**DM を許可するユーザー**（${count} 人）\n` +
+    `${mentionLine}\n\n` +
+    '_追加 / 削除：_ `/invite user @ユーザー`  `/remove user @ユーザー`',
+  accessAllowedChats: (count: number, list: string) =>
+    `**応答を許可するグループ**（${count} 個）\n` +
+    `${list}\n\n` +
+    '_bot が参加している全グループを一括追加：_ `/invite all group`\n' +
+    '_追加 / 削除（対象グループ内で送信）：_ `/invite group`  `/remove group`',
+  accessMentionOverrides: (count: number, list: string) =>
+    `**グループ別 @ 例外**（${count} 個）\n` +
+    '_対象グループ内で `/mention group on|off|default` を送信すると、そのグループにのみ適用されます。`off` はそのグループを @ 不要の専用グループにし、`default` は例外を削除してグローバル既定値に戻します。_\n' +
+    `${list}`,
+  accessAdmins: (count: number, mentionLine: string) =>
+    `**管理者**（${count} 人）\n` +
+    `${mentionLine}\n\n` +
+    '_実行できる機密コマンド：`/account` `/config` `/exit` `/reconnect` `/doctor` `/cd` `/ws` `/invite` `/remove`。管理者は自動的に DM 権限も持ち、許可リスト外のグループでもアクセス制御を管理できます。_\n\n' +
+    '_追加 / 削除：_ `/invite admin @ユーザー`  `/remove admin @ユーザー`',
+  configSummary: '環境設定',
+  configIntro:
+    '⚙️ **環境設定**\n\n' +
+    'bot の動作を調整します。送信すると現在の profile 設定に書き込まれ、メッセージとアクセス制御の設定は即時に反映されます。',
+  messageReplyHeading:
+    '**メッセージ返信方式**\n' +
+    '_プレーンテキスト:agent の実行完了後に一括送信。ストリーミングなしで最も軽量_\n' +
+    '_メッセージカード:軽量ストリーミングの markdown カード。Lark ネイティブのタイプライターアニメーション_\n' +
+    '_インタラクティブカード:フルカード。ツール呼び出しは展開可能なパネルに折りたたまれ、実行ステータス付き_',
+  optText: 'プレーンテキスト',
+  optMarkdown: 'メッセージカード(デフォルト)',
+  optCard: 'インタラクティブカード',
+  labelMarkdown: 'メッセージカード',
+  toolCallsHeading:
+    '\n**ツール呼び出しの表示**\n' +
+    '_表示:bot が実行したコマンドや読み取ったファイルなどの過程を確認できます_\n' +
+    '_非表示:agent の最終的なテキスト回答のみを表示し、ツールブロックをすべてスキップします_',
+  optShow: '表示(デフォルト)',
+  optHide: '非表示',
+  cotHeading:
+    '\n**思考プロセス(COT)**\n' +
+    '_オフ:最終回答のみを送信します_\n' +
+    '_簡易 / 詳細:最終回答の前に、独立した「思考プロセス」メッセージでステップとツール呼び出しをリアルタイム表示します(詳細は推論と引数を含む)。アプリに message_cot 権限が必要で、ない場合は自動的にフォールバックします_',
+  optCotOff: 'オフ(デフォルト)',
+  optCotBrief: '簡易',
+  optCotDetailed: '詳細',
+  concurrencyHeading:
+    '\n**同時実行の上限**\n' +
+    '_全体で同時に実行する agent プロセス数(主にトピックグループでの複数トピック並行実行に影響)_\n' +
+    '_デフォルト 10、範囲 1-50。超過したリクエストは FIFO でキューに入ります_',
+  idleTimeoutHeading:
+    '\n**run キープアライブ(分)**\n' +
+    '_agent が長時間出力しない場合に自動で kill し、ハングを防ぎます_\n' +
+    '_0 = オフ(デフォルト)、範囲 1-120。`/timeout` で scope ごとに上書きできます_',
+  mentionHeading:
+    '\n**グループで @bot を必須にする（グローバル既定）**\n' +
+    '_「@bot が必要」の維持を推奨します。「専用グループで @ 不要」は、そのグループをほぼこの bot 専用で使う場合にのみ適しています。DM では @ は常に不要です。`@全員` には常に応答しません。_',
+  mentionPlaceholder: 'グループチャットのトリガー方式を選択してください',
+  optMentionYes: '@bot が必要（デフォルト）',
+  optMentionNo: '専用グループで @ 不要',
+  mentionNote:
+    '_@bot が必要:グループとトピックグループでは、@bot されていないメッセージには返信しません。_\n' +
+    '_専用グループで @ 不要:グループの通常メッセージも agent に送られます。同じグループに複数の bot がいると同時に応答しやすいため、有効化は推奨しません。アプリに `im:message.group_msg` 権限が必要です。_\n' +
+    '_グループ別の例外は下の「アクセス制御」で確認できます。変更は対象グループ内で `/mention group on|off|default` を送信してください。_',
+  identityHeading:
+    '\n**lark-cli アイデンティティポリシー**\n' +
+    '_アプリのアイデンティティのみ:bot/app の機能を使用し、個人リソースにはアクセスしません_\n' +
+    '_ユーザーのアイデンティティを許可:アプリのアイデンティティを保持しつつ、認可済みユーザーの個人カレンダー・メール・ドライブなどへのアクセスを許可します_',
+  optIdentityBot: 'アプリのアイデンティティのみ',
+  optIdentityUser: 'ユーザーのアイデンティティを許可',
+  languageHeading: '\n**言語 / Language**\n_bot の返信、カード、コマンド出力の言語に影響します_',
+  langOptionZh: '中文',
+  langOptionEn: 'English',
+  langOptionJa: '日本語',
+  accessPanelTitle: '🔒 **アクセス制御**（クリックで展開）',
+  configSavedSummary: '設定を保存しました',
+  emptyList: '_(なし)_',
+  itemsCount: (n: number) => `${n} 件`,
+  configSavedBody: (p: {
+    replyLabel: string;
+    showToolCalls: boolean;
+    maxConcurrentRuns: number;
+    runIdleTimeoutMinutes: number;
+    requireMentionInGroup: boolean;
+    mentionOverridesSummary: string;
+    allowUserIdentity: boolean;
+    allowedUsersSummary: string;
+    allowedChatsSummary: string;
+    adminsSummary: string;
+  }) =>
+    '✅ **設定を保存しました**\n\n' +
+    `**メッセージ返信方式**:${p.replyLabel}\n` +
+    `**ツール呼び出しの表示**:\`${p.showToolCalls ? 'show' : 'hide'}\`\n` +
+    `**同時実行の上限**:\`${p.maxConcurrentRuns}\`\n` +
+    `**run キープアライブ**:\`${p.runIdleTimeoutMinutes > 0 ? `${p.runIdleTimeoutMinutes} 分` : 'オフ'}\`\n` +
+    `**グループで @bot を必須にする（グローバル既定）**:\`${p.requireMentionInGroup ? 'はい' : '専用グループで @ 不要'}\`\n` +
+    `**グループ別 @ 例外**:${p.mentionOverridesSummary}\n\n` +
+    `**lark-cli アイデンティティポリシー**:\`${p.allowUserIdentity ? 'ユーザーのアイデンティティを許可' : 'アプリのアイデンティティのみ'}\`\n\n` +
+    '🔒 **アクセス制御**\n' +
+    `**DM を許可するユーザー**:${p.allowedUsersSummary}\n` +
+    `**応答を許可するグループ**:${p.allowedChatsSummary}\n` +
+    `**管理者**:${p.adminsSummary}\n\n` +
+    '次のメッセージから有効になります。',
+  scopeGrantSummary: '追加の認可が必要です',
+  scopeGrantBody: (url: string, expireMins: number) =>
+    '⚠️ **「グループで @bot 不要」にはあと 1 つ権限が必要です**\n\n' +
+    '「@bot なしでも返信」を有効にしましたが、現在のアプリには **グループ内のすべてのメッセージを取得**（`im:message.group_msg`）権限がありません。' +
+    'この権限がないと、Lark は @ されていないグループメッセージを bot に配信しないため、この設定はまだ有効になりません。\n\n' +
+    `**下のリンクから権限を付与してください**（約 ${expireMins} 分間有効）：\n` +
+    `[🔗 ワンクリックで認可](${url})\n\n` +
+    '_スキャン/クリックすると確認ページが開き、新しい権限はあらかじめ入力されています。確認するだけで完了です。認可が完了すると、グループの新しいメッセージから自動的に有効になり、再起動は不要です。_\n' +
+    `_リンクが開けない場合はこちらをコピーしてください：_\n\`${url}\`\n\n` +
+    '_認可後もグループの非 @ メッセージが届かない場合は、`/reconnect` を一度送信してください。_',
+  scopeGrantedSummary: '認可が完了しました',
+  scopeGrantedBody:
+    '✅ **認可が完了しました**\n\n' +
+    '`im:message.group_msg` 権限が有効になりました。今後は @bot されていないグループメッセージにも返信します。\n\n' +
+    '_まだ有効にならない場合は、`/reconnect` を一度送信してください。_',
+  configCancelledBody: 'キャンセルしました。変更はありません。',
+  configFailedSummary: '保存に失敗しました',
+  configFailedBody: (reason: string) => `保存に失敗しました：${reason}`,
+
+  // ── account-cards.ts ──
+  accountCurrentSummary: '現在のアプリ',
+  accountCurrentBody: (appId: string, botName: string, tenant: string) =>
+    [
+      '📋 **現在のアプリ**',
+      '',
+      `**App ID**: \`${appId}\``,
+      `**Bot 名**: ${botName}`,
+      `**Tenant**: ${tenant}`,
+    ].join('\n'),
+  unknownValue: '(不明)',
+  accountChangeLabel: '認証情報を変更',
+  accountValidationFailedInline: (msg: string) => `❌ **検証に失敗しました**：${msg}`,
+  appSecretPlaceholder: '32 文字の文字列',
+  tenantFeishu: 'Feishu (中国)',
+  tenantLark: 'Lark (グローバル)',
+  accountValidatingSummary: '検証中...',
+  accountValidatingBody: '⏳ **認証情報を検証しています...**',
+  accountSavedSummary: '保存しました',
+  accountSuccessBody: (appId: string, botName: string | undefined, tenant: string) =>
+    [
+      '✅ **認証情報を保存しました**',
+      '',
+      `**App ID**: \`${appId}\``,
+      botName ? `**Bot 名**: ${botName}` : '',
+      `**Tenant**: ${tenant}`,
+      '',
+      '新しい認証情報で WebSocket を再接続しています...',
+      '⚠️ 新しい bot がこのグループにいない場合、以降のメッセージは新しい bot が引き継ぎ、古い bot は返信しなくなります。',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  accountFailureSummary: '検証に失敗しました',
+  accountFailureBody: (reason: string) =>
+    `❌ **検証に失敗しました**\n\n\`${reason}\`\n\nApp ID と Secret が正しいか確認し、\`/account change\` を再送信してやり直してください。`,
+  accountCancelledBody: 'キャンセルしました。変更はありません。',
+
+  // ── templates.ts ──
+  lockedPanelTitle: '送信内容を表示',
+  lockedBody: '操作を受け付けました。このカードは完了しています。',
+  lockedHeader: '✅ 完了',
+  expiredSummary: '期限切れ',
+  expiredHeader: '⏰ 期限切れ',
+  expiredBody: 'このカードは期限切れです。もう一度リクエストを送信してください。',
+  disabledNote: '_テキストで返信したため、このカードはクローズしました_',
+  cwdLine: (cwd: string) => `現在の cwd：\`${cwd}\``,
+  noNamedWorkspaces: '名前付きワークスペースはまだありません。',
+  wsSaveHint: '💡 `/ws save <name>` を送信すると、現在の cwd を名前付きワークスペースとして保存できます',
+  switchHere: 'ここに切り替え',
+  deleteLabel: '削除',
+  sessionStaleSuffix: ' ⚠️ 古い cwd です。次のメッセージで新規セッションを開始します',
+  noSession: '(なし)',
+  topicScopeLine: (scope: string) => `\`${scope}\` _（トピック別セッション）_`,
+  statusTitle: '📊 現在のステータス',
+  noHistorySessions: 'この cwd に過去のセッションはありません。',
+  resumeTitle: '🔁 過去のセッションを再開',
+  lineCount: (n: number) => `${n} 件`,
+  alreadyCurrentSession: '現在のセッションです',
+  resumeThisSession: '▸ このセッションを再開',
+  helpTitle: '💡 ヘルプ',
+  helpBody: (agentName: string) =>
+    [
+      '**コマンド一覧**',
+      '',
+      '- `/new` `/reset` — 現在の chat のセッションをクリア',
+      '- `/new chat [name]` — 新しいグループ+セッションを作成し、自動であなたを招待',
+      '- `/resume [N]` — 過去のセッションを一覧表示して再開（最大 N 件）',
+      '- `/cd <path>` — 作業ディレクトリを切り替え（session はリセットされます）',
+      '- `/ws list|save <name>|use <name>|remove <name>` — ワークスペース',
+      '- `/account` — 現在のアプリを表示。`/account change` で appId/secret を変更して再接続',
+      '- `/config` — 環境設定、アクセス制御、lark-cli アイデンティティポリシーを調整',
+      '- `/mention group on|off|default` — このグループで @bot を必須にするか設定。off は専用グループで @ 不要モード',
+      '- `/status` — 現在のステータス',
+      '- `/stop` — 実行中のタスクを終了（カード下部の ⏹ 停止 ボタンでも可）',
+      '- `/stop comment:<scopeHash>` — 管理者:ドキュメントコメントタスクを停止',
+      '- `/timeout [N|off|default]` — 現在の session のキープアライブ分数。グローバル既定は `/config` で変更',
+      '- `/timeout comment:<scopeHash> N` — 管理者:ドキュメントコメントタスクのキープアライブを設定',
+      '- `/ps` — このマシン上のすべての bot を一覧表示し、現在応答中のものをマーク',
+      '- `/exit <id|#>` — 指定した bot を終了（id/番号は `/ps` で確認）',
+      '- `/reconnect` — WebSocket を強制再接続（ネットワーク不調後に bot が反応しないときに使用）',
+      `- \`/doctor [説明]\` — ログと説明を ${agentName} に渡して自己診断`,
+      '- `/help` — このヘルプ',
+      '',
+      `その他の内容はそのまま ${agentName} に送られます。`,
+    ].join('\n'),
+
+  // ── run-renderer.ts / text-renderer.ts ──
+  interruptedNote: '_⏹ 中断されました_',
+  idleTimeoutNote: (mins: number) => `_⏱ ${mins} 分間応答がないため、自動的に終了しました_`,
+  agentFailedCard: (msg: string) => `⚠️ agent が失敗しました：${msg}`,
+  agentFailedText: (msg: string) => `⚠️ agent が失敗しました:${msg}`,
+  noContentNote: '_（コンテンツが返されませんでした）_',
+  reasoningActive: '🧠 **思考中**',
+  reasoningDone: '🧠 **思考完了。クリックで表示**',
+  noToolOutput: '_出力なし_',
+  toolSummaryTitle: (count: number, finalized: boolean) =>
+    `☕ **${count} 件のツール呼び出し${finalized ? '（終了）' : ''}**`,
+  stopBtn: '⏹ 停止',
+  footerThinking: '🧠 思考中',
+  footerToolRunning: '🧰 ツールを実行中',
+  footerStreaming: '✍️ 出力中',
+  summaryInterrupted: '中断済み',
+  summaryTimeout: 'タイムアウト',
+  summaryError: 'エラー',
+  summaryToolRunning: 'ツールを実行中',
+  summaryStreaming: '出力中',
+  summaryThinking: '思考中',
+  footerThinkingText: '_🧠 思考中…_',
+  footerToolRunningText: '_🧰 ツールを実行中…_',
+  footerStreamingText: '_✍️ 出力中…_',
+
+  // ── dispatcher.ts ──
+  cardExpiredNotice:
+    '⏰ このカードは期限切れです。もう一度リクエストを送信いただければ、新しいカードをお送りします。',
+  buttonAlreadySubmitted:
+    '⚠️ このボタンはすでに送信済みです。各ボタンは 1 回しか送信できません。前回の送信に返信がない場合は、テキストで選択内容を再送信してください。',
+  askAnswerEntry: (q: string, a: string | string[]) =>
+    `**${q}** ${Array.isArray(a) ? a.join('、') || '（なし）' : a || '（なし）'}`,
+  yourChoice: (choices: string[]) => `あなたの選択:${choices.join('、')}`,
+
+  // ── tool-render.ts ──
+  toolRunningBody: '_実行中…_',
+  toolBodyTruncated: (body: string) =>
+    `${body}…\n\n_（body は切り詰められました。完全な内容は \`/doctor\` またはログで確認してください）_`,
 };

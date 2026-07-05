@@ -1911,7 +1911,7 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
     rawLarkCliIdentity === 'user-default' || rawLarkCliIdentity === 'bot-only'
       ? rawLarkCliIdentity
       : ctx.controls.profileConfig.larkCli.identityPreset;
-  // Parse language ('zh-CN' | 'en-US', loose forms like 'zh'/'en' accepted).
+  // Parse language ('zh-CN' | 'en-US' | 'ja-JP', loose forms like 'zh'/'en'/'ja' accepted).
   // Missing / unrecognized keeps the current preference.
   const language =
     normalizeLocale(String(fv.language ?? '').trim()) ?? getLanguage(ctx.controls.cfg);

@@ -76,3 +76,42 @@ export const botEn: typeof botZh = {
   // lark-info.ts
   unnamedChat: '(unnamed)',
 };
+
+export const botJa: typeof botZh = {
+  // channel.ts
+  flushFailedNotice: (detail: string) =>
+    `⚠️ このメッセージの処理に失敗し、agent の実行を開始できませんでした：${detail}`,
+  reconnectWarn3: '⚠️ 3 回連続で再接続しました。ネットワークが不安定な可能性があります。',
+  reconnectWarn10: '❌ 10 回連続で再接続しました。Lark で /reconnect を送るか、bot を再起動してください。',
+  listening: 'メッセージを待ち受けています。Ctrl+C で終了します。',
+  nonAllowedGroupHint:
+    'このグループはまだ応答リストに登録されていないため、bot はメッセージを処理しません。\n' +
+    'Bot owner/管理者はこのグループで /invite group を送ると許可リストに追加できます。',
+  streamInterrupted:
+    '⚠️ このメッセージの処理が中断されました（内部エラー）。もう一度送信してください。繰り返し発生する場合は /doctor で確認できます。',
+
+  // comments.ts
+  commentWorkspaceUnavailable: (detail: string) => `作業ディレクトリを利用できません：${detail}`,
+  commentTimedOut: 'このコメントタスクはタイムアウトしました。もう一度 @ してください。',
+  commentAgentError: (message: string) => `⚠️ Claude エラー：${message}`,
+  commentNoReply: '（返信内容なし）',
+  commentRejectedActive: 'このコメントスレッドではタスクが実行中です。しばらくしてからお試しください。',
+  commentRejectedPoolFull: '現在タスクが混み合っています。しばらくしてからお試しください。',
+  commentRejectedReconnecting: 'bot は再接続中です。しばらくしてからお試しください。',
+  managedWorkspaceUnavailable: (detail: string) =>
+    `マネージド作業ディレクトリを利用できません：${detail}`,
+
+  // cot.ts
+  cotStepUnderstand: '質問を理解しています',
+  cotToolRunning: 'ツールを呼び出しています',
+  cotToolDone: 'ツール呼び出しが完了しました',
+
+  // run-flow.ts
+  runRejectedReconnecting: 'bot は再接続中です。新しいメッセージは後ほど処理されます。',
+  runRejectedActive:
+    'この会話では実行中のタスクがあります。しばらく待つか、現在の実行を停止してください。',
+  runRejectedGeneric: '現在実行を開始できません。しばらくしてからお試しください。',
+
+  // lark-info.ts
+  unnamedChat: '(名称なし)',
+};

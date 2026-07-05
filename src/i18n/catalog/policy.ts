@@ -55,3 +55,28 @@ export const policyEn: typeof policyZh = {
   relDaysAgo: (day: number) => `${day} days ago`,
   relMonthsAgo: (mo: number) => `${mo} mo ago`,
 };
+
+export const policyJa: typeof policyZh = {
+  emptyRequestedCwd: '作業ディレクトリが指定されていません。',
+  pathInaccessible: (path: string) => `作業ディレクトリが存在しないか、アクセスできません：${path}`,
+  notDirectory: (path: string) => `パスがディレクトリではありません：${path}`,
+  filesystemRoot: 'ファイルシステムのルートは作業ディレクトリに設定できません。',
+  homeRoot: 'ホームのルートは作業ディレクトリに設定できません。より具体的なサブディレクトリを選択してください。',
+  userRoot: 'ユーザーディレクトリのルートは作業ディレクトリに設定できません。より具体的なサブディレクトリを選択してください。',
+  broadUserFolder: 'このディレクトリは範囲が広すぎます。より具体的なサブディレクトリを選択してください。',
+  tempRoot: '一時ディレクトリのルートは作業ディレクトリに設定できません。より具体的なサブディレクトリを選択してください。',
+  systemRoot: 'システムディレクトリは作業ディレクトリに設定できません。',
+  volumeRoot: 'ボリュームのルートは作業ディレクトリに設定できません。より具体的なサブディレクトリを選択してください。',
+
+  accessDenied: '現在のユーザーには実行を開始する権限がありません。',
+  folderAllowlistUnverified: 'folder allowlist は未対応のため、実行を拒否しました。',
+  requiredAttachmentRejected: '必須の添付ファイルが検証を通過しなかったため、実行を拒否しました。',
+
+  emptySession: '(空のセッション)',
+  relJustNow: 'たった今',
+  relMinutesAgo: (min: number) => `${min} 分前`,
+  relHoursAgo: (hr: number) => `${hr} 時間前`,
+  relYesterday: '昨日',
+  relDaysAgo: (day: number) => `${day} 日前`,
+  relMonthsAgo: (mo: number) => `${mo} か月前`,
+};

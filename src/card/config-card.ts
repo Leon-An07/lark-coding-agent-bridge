@@ -225,6 +225,7 @@ export function configFormCard(opts: ConfigFormOpts): object {
               options: [
                 { text: { tag: 'plain_text', content: m.langOptionZh }, value: 'zh-CN' },
                 { text: { tag: 'plain_text', content: m.langOptionEn }, value: 'en-US' },
+                { text: { tag: 'plain_text', content: m.langOptionJa }, value: 'ja-JP' },
               ],
             },
             { tag: 'hr' },
