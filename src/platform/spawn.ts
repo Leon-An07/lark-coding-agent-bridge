@@ -15,6 +15,26 @@ export function spawnProcess(
   return crossSpawn(command, [...args], options);
 }
 
+/**
+ * Kill a spawned child and its descendants. Requires the child to have been
+ * spawned with `detached: true` on POSIX so it leads its own process group —
+ * signalling -pid then reaches grandchildren (Bash tools, MCP servers,
+ * lark-cli waiting on OAuth) that a plain child.kill() would orphan. Falls
+ * back to a direct kill when the group signal fails (group already gone, or
+ * Windows where process groups don't apply).
+ */
+export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): boolean {
+  if (child.pid !== undefined && process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, signal);
+      return true;
+    } catch {
+      // fall through to direct kill
+    }
+  }
+  return child.kill(signal);
+}
+
 export function spawnProcessSync(
   command: string,
   args: readonly string[] = [],

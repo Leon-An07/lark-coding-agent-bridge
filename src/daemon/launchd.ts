@@ -50,8 +50,17 @@ export function buildPlist(inputs: PlistInputs): string {
     </array>
     <key>RunAtLoad</key>
     <true/>
+    <!-- Restart only on abnormal exit. Unconditional KeepAlive turned the
+         in-chat exit command into a restart, and made permanent failures
+         (preflight error, corrupt state file) relaunch every ~10s forever.
+         ThrottleInterval slows any remaining crash loop. -->
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
     <key>StandardOutPath</key>
     <string>${escape(daemonStdoutPath(inputs.profile))}</string>
     <key>StandardErrorPath</key>

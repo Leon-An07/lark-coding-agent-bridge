@@ -296,6 +296,21 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
         });
       } catch (err) {
         log.fail('flush', err);
+        // The batch is consumed at this point — anything not surfaced here
+        // (e.g. SpawnFailed from a missing agent binary) would make the
+        // user's message vanish with no reply at all. Best-effort notice.
+        const detail = err instanceof Error ? err.message : String(err);
+        try {
+          await channel.send(
+            firstMsg.chatId,
+            { text: `⚠️ 本次消息处理失败，未能发起 agent 运行：${detail.slice(0, 200)}` },
+            { replyTo: firstMsg.messageId },
+          );
+        } catch (notifyErr) {
+          log.warn('flush', 'error-notice-failed', {
+            err: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+          });
+        }
       } finally {
         pending.unblock(scope);
         log.info('flush', 'end');

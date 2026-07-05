@@ -17,3 +17,6 @@ coverage/
 scripts/
 CHANGELOG.md
 tests-smoke/
+
+# Lark auth artifacts — contain live OAuth device codes
+lark-auth-qrcodes/

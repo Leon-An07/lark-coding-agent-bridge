@@ -3,7 +3,12 @@ import type { Readable, Writable } from 'node:stream';
 import { join } from 'node:path';
 import type { SandboxMode } from '../../config/profile-schema';
 import { log } from '../../core/logger';
-import { mergeProcessEnv, spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
+import {
+  killProcessTree,
+  mergeProcessEnv,
+  spawnProcess,
+  type SpawnedProcessByStdio,
+} from '../../platform/spawn';
 import { SpawnFailed } from '../../runtime/errors';
 import { prefixBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
@@ -111,6 +116,10 @@ export class CodexAdapter implements AgentAdapter {
       cwd: opts.cwd,
       env: mergeProcessEnv(process.env, envOverrides),
       stdio: ['pipe', 'pipe', 'pipe'],
+      // Own process group (POSIX) so stop() can signal the whole tree —
+      // codex's own children would otherwise survive the SIGKILL
+      // escalation as orphans.
+      detached: process.platform !== 'win32',
     }) as CodexChild;
 
     log.info('agent', 'spawn', {
@@ -162,7 +171,7 @@ export class CodexAdapter implements AgentAdapter {
         if (child.exitCode !== null || child.signalCode !== null) return;
         stopReason = 'interrupted';
         log.info('agent', 'stop-sigterm', { pid: child.pid ?? null, graceMs: stopGraceMs });
-        child.kill('SIGTERM');
+        killProcessTree(child, 'SIGTERM');
         await new Promise<void>((resolve) => {
           const timer = setTimeout(() => {
             if (child.exitCode === null && child.signalCode === null) {
@@ -171,7 +180,7 @@ export class CodexAdapter implements AgentAdapter {
                 graceMs: stopGraceMs,
                 reason: 'grace-period-expired',
               });
-              child.kill('SIGKILL');
+              killProcessTree(child, 'SIGKILL');
             }
             resolve();
           }, stopGraceMs);

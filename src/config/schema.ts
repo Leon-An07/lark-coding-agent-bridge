@@ -280,9 +280,16 @@ export function getAgentStopGraceMs(cfg: AppConfig): number {
   return Math.min(30_000, Math.max(100, Math.floor(raw)));
 }
 
+/**
+ * Idle watchdog for agent runs. Defaults to 30 minutes when unset — a wedged
+ * agent process that emits nothing and never exits would otherwise hold its
+ * pool slot and block the chat's queue until a manual /stop. Explicit 0 (or
+ * any non-positive value) disables the watchdog.
+ */
 export function getRunIdleTimeoutMs(cfg: AppConfig): number | undefined {
   const raw = cfg.preferences?.runIdleTimeoutMinutes;
-  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) return undefined;
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return 30 * 60_000;
+  if (raw <= 0) return undefined;
   const clamped = Math.min(Math.max(Math.floor(raw), 1), 120);
   return clamped * 60_000;
 }

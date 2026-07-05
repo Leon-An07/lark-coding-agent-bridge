@@ -1,7 +1,12 @@
 import { createInterface } from 'node:readline';
 import type { Readable } from 'node:stream';
 import { log } from '../../core/logger';
-import { mergeProcessEnv, spawnProcess, type SpawnedProcessByStdio } from '../../platform/spawn';
+import {
+  killProcessTree,
+  mergeProcessEnv,
+  spawnProcess,
+  type SpawnedProcessByStdio,
+} from '../../platform/spawn';
 import { buildBridgeSystemPrompt } from '../bridge-system-prompt';
 import { buildLarkChannelEnv, type LarkChannelEnvContext } from '../lark-channel-env';
 import { checkAgentAvailability, type AgentAvailability } from '../preflight';
@@ -119,6 +124,10 @@ export class ClaudeAdapter implements AgentAdapter {
       cwd: opts.cwd,
       env: mergeProcessEnv(process.env, buildLarkChannelEnv(this.larkChannel)),
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Own process group (POSIX) so stop() can signal the whole tree —
+      // claude's own children (Bash, MCP servers) would otherwise survive
+      // the SIGKILL escalation as orphans.
+      detached: process.platform !== 'win32',
     }) as ClaudeChild;
 
     log.info('agent', 'spawn', {
@@ -173,7 +182,7 @@ export class ClaudeAdapter implements AgentAdapter {
       async stop() {
         if (child.exitCode !== null || child.signalCode !== null) return;
         log.info('agent', 'stop-sigterm', { pid: child.pid ?? null, graceMs: stopGraceMs });
-        child.kill('SIGTERM');
+        killProcessTree(child, 'SIGTERM');
         await new Promise<void>((resolve) => {
           const timer = setTimeout(() => {
             if (child.exitCode === null && child.signalCode === null) {
@@ -182,7 +191,7 @@ export class ClaudeAdapter implements AgentAdapter {
                 graceMs: stopGraceMs,
                 reason: 'grace-period-expired',
               });
-              child.kill('SIGKILL');
+              killProcessTree(child, 'SIGKILL');
             }
             resolve();
           }, stopGraceMs);

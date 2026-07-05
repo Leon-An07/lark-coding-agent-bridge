@@ -129,12 +129,24 @@ export class CotPublisher {
       this.timer = undefined;
     }
     await this.flush();
-    if (this.disabled || !this.ref) return;
-    try {
-      await this.client.complete(this.ref, reason);
-      log.info('cot', 'completed', { cotId: this.ref.cotId, reason });
-    } catch (err) {
-      log.warn('cot', 'complete-failed', { err: err instanceof Error ? err.message : String(err) });
+    if (!this.ref) return;
+    // Always attempt to close the bubble — even when updates degraded
+    // (`disabled`) — otherwise the 思考过程 message spins in Lark forever.
+    // One retry: complete is known to fail transiently (COT complete 10001).
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.client.complete(this.ref, reason);
+        log.info('cot', 'completed', { cotId: this.ref.cotId, reason });
+        return;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (attempt >= 2) {
+          log.warn('cot', 'complete-failed', { err: message });
+          return;
+        }
+        log.warn('cot', 'complete-retry', { err: message });
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
     }
   }
 
