@@ -162,6 +162,18 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
           } catch {
             // best-effort notice
           }
+        } else if (reason === 'nonce-replay') {
+          // A re-click after the first click was consumed. Usually harmless
+          // (double-click), but if the bridge crashed before forwarding the
+          // first click, this is the user's only retry — tell them instead
+          // of silently dropping it.
+          try {
+            await deps.channel.send(deps.evt.chatId, {
+              text: '⚠️ 这个按钮已提交过，每个按钮只能提交一次。如果之前的提交没有得到回复，请直接用文字重新发送你的选择。',
+            });
+          } catch {
+            // best-effort notice
+          }
         }
         return;
       }

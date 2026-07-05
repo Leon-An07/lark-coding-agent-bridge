@@ -30,9 +30,12 @@ describe('open-card store (file-backed, shared between send-card CLI and daemon)
     await flushOpenCardStore();
 
     const onDisk = JSON.parse(readFileSync(storePath, 'utf8')) as Record<string, unknown>;
-    expect(onDisk.oc_chat).toEqual({ messageId: 'om_msg1', card: { schema: '2.0' } });
+    expect(onDisk.oc_chat).toMatchObject({ messageId: 'om_msg1', card: { schema: '2.0' } });
 
-    expect(takeScopeOpenCard('oc_chat')).toEqual({ messageId: 'om_msg1', card: { schema: '2.0' } });
+    expect(takeScopeOpenCard('oc_chat')).toMatchObject({
+      messageId: 'om_msg1',
+      card: { schema: '2.0' },
+    });
     await flushOpenCardStore();
     expect(takeScopeOpenCard('oc_chat')).toBeUndefined();
     const after = JSON.parse(readFileSync(storePath, 'utf8')) as Record<string, unknown>;
@@ -53,13 +56,13 @@ describe('open-card store (file-backed, shared between send-card CLI and daemon)
     writeFileSync(storePath, '{not json');
     expect(takeScopeOpenCard('oc_chat')).toBeUndefined();
     setScopeOpenCard('oc_chat', 'om_msg2', {});
-    expect(takeScopeOpenCard('oc_chat')).toEqual({ messageId: 'om_msg2', card: {} });
+    expect(takeScopeOpenCard('oc_chat')).toMatchObject({ messageId: 'om_msg2', card: {} });
   });
 
   it('falls back to pure in-memory behaviour when no store is configured', () => {
     configureOpenCardStore(undefined);
     setScopeOpenCard('oc_mem', 'om_mem', {});
-    expect(takeScopeOpenCard('oc_mem')).toEqual({ messageId: 'om_mem', card: {} });
+    expect(takeScopeOpenCard('oc_mem')).toMatchObject({ messageId: 'om_mem', card: {} });
     expect(takeScopeOpenCard('oc_mem')).toBeUndefined();
   });
 });

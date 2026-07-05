@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, rename } from 'node:fs/promises';
 import { paths } from '../config/paths';
 import { log } from '../core/logger';
 import { writeFileAtomic } from '../platform/atomic-write';
@@ -54,7 +54,14 @@ export class SessionStore {
       }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
-      throw err;
+      // A corrupt file (disk-full write, manual edit) must not brick startup
+      // into a launchd relaunch loop. Quarantine it and start empty — losing
+      // resumable session ids beats an unbootable bot.
+      log.fail('sessions', err, { path: this.path, action: 'quarantine-and-start-empty' });
+      await rename(this.path, `${this.path}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`).catch(
+        () => {},
+      );
+      this.data = {};
     }
   }
 

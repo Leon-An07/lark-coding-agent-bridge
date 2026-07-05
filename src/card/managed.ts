@@ -1,5 +1,6 @@
 import type { LarkChannel } from '@larksuite/channel';
-import { readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
+import * as lockfile from 'proper-lockfile';
 import { log } from '../core/logger';
 import { writeFileAtomic } from '../platform/atomic-write';
 
@@ -26,7 +27,14 @@ const MAX_TRACKED = 500;
 interface OpenCardEntry {
   messageId: string;
   card: object;
+  /** When the card was registered. Entries older than the agent-card token
+   * TTL can never be answered anyway, so they're pruned on the next write —
+   * quiet scopes used to leave entries in the file forever. */
+  at?: number;
 }
+
+/** Agent-card callback tokens live 24h; keep a little slack past that. */
+const OPEN_CARD_TTL_MS = 25 * 60 * 60 * 1000;
 
 const openCardByScope = new Map<string, OpenCardEntry>();
 let openCardStorePath: string | undefined;
@@ -55,11 +63,42 @@ function readOpenCardFile(): Record<string, OpenCardEntry> {
   }
 }
 
-function persistOpenCards(entries: Record<string, OpenCardEntry>): void {
+function pruneOpenCards(all: Record<string, OpenCardEntry>): void {
+  const now = Date.now();
+  for (const [scope, entry] of Object.entries(all)) {
+    if (typeof entry.at !== 'number') {
+      // Legacy entry without a timestamp: start its TTL clock now.
+      entry.at = now;
+    } else if (now - entry.at > OPEN_CARD_TTL_MS) {
+      delete all[scope];
+    }
+  }
+}
+
+/** Read-modify-write the open-card file atomically. The read happens inside
+ * the persist chain (so queued in-process writes are visible) and under a
+ * cross-process file lock (the send-card CLI and the daemon both mutate this
+ * file; unlocked RMW let one side's write erase the other's entry). */
+function mutateOpenCardStore(mutate: (all: Record<string, OpenCardEntry>) => void): void {
   const path = openCardStorePath;
   if (!path) return;
   openCardPersistChain = openCardPersistChain
-    .then(() => writeFileAtomic(path, `${JSON.stringify(entries)}\n`))
+    .then(async () => {
+      appendFileSync(path, '');
+      const release = await lockfile.lock(path, {
+        realpath: false,
+        stale: 10_000,
+        retries: { retries: 5, minTimeout: 50, maxTimeout: 500 },
+      });
+      try {
+        const all = readOpenCardFile();
+        pruneOpenCards(all);
+        mutate(all);
+        await writeFileAtomic(path, `${JSON.stringify(all)}\n`);
+      } finally {
+        await release();
+      }
+    })
     .catch((err) => {
       log.warn('agent-card', 'open-card-persist-failed', {
         err: err instanceof Error ? err.message : String(err),
@@ -69,11 +108,11 @@ function persistOpenCards(entries: Record<string, OpenCardEntry>): void {
 
 /** Remember the open agent card for a scope (overwrites any prior). */
 export function setScopeOpenCard(scope: string, messageId: string, card: object): void {
-  openCardByScope.set(scope, { messageId, card });
-  if (!openCardStorePath) return;
-  const all = readOpenCardFile();
-  all[scope] = { messageId, card };
-  persistOpenCards(all);
+  const entry: OpenCardEntry = { messageId, card, at: Date.now() };
+  openCardByScope.set(scope, entry);
+  mutateOpenCardStore((all) => {
+    all[scope] = entry;
+  });
 }
 
 /** Get + clear the scope's open card (whether it's being closed or answered). */
@@ -81,11 +120,11 @@ export function takeScopeOpenCard(scope: string): OpenCardEntry | undefined {
   const mem = openCardByScope.get(scope);
   openCardByScope.delete(scope);
   if (!openCardStorePath) return mem;
-  const all = readOpenCardFile();
-  const fromFile = all[scope];
+  const fromFile = readOpenCardFile()[scope];
   if (fromFile) {
-    delete all[scope];
-    persistOpenCards(all);
+    mutateOpenCardStore((all) => {
+      delete all[scope];
+    });
   }
   // The file entry wins: it's the cross-process source of truth.
   return fromFile ?? mem;

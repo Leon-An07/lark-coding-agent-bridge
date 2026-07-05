@@ -130,11 +130,20 @@ export class CodexAdapter implements AgentAdapter {
       images: opts.images?.length ?? 0,
     });
 
+    // Kept only for the exit-code error message (truncated there anyway), so
+    // retain a bounded tail — a stderr-chatty run used to grow this for its
+    // whole lifetime.
     const stderrChunks: Buffer[] = [];
+    let stderrBytes = 0;
     let runtimeError: Error | null = null;
     let stderrBuffer = '';
     child.stderr.on('data', (chunk: Buffer) => {
       stderrChunks.push(chunk);
+      stderrBytes += chunk.length;
+      while (stderrBytes > 8192 && stderrChunks.length > 1) {
+        stderrBytes -= stderrChunks[0]!.length;
+        stderrChunks.shift();
+      }
       stderrBuffer += chunk.toString('utf8');
       let nl = stderrBuffer.indexOf('\n');
       while (nl !== -1) {
@@ -279,6 +288,13 @@ async function* createEventStream(
   }
   if (runtimeError && !translator.terminalEmitted()) {
     yield terminalError(`codex runtime error: ${runtimeError.message}`);
+    return;
+  }
+  if (exitCode === null && child.signalCode && !translator.terminalEmitted()) {
+    // Killed by a signal we didn't send (stopReason would be set otherwise).
+    // exitCode stays null on signal death, so without this branch the run
+    // is finalized as success.
+    yield terminalError(`codex killed by signal ${child.signalCode}`);
     return;
   }
 

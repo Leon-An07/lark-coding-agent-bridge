@@ -25,15 +25,16 @@ export class ProcessPool {
   }
 
   async acquire(): Promise<() => void> {
-    if (this.active < this.cap()) {
-      this.active++;
-      log.info('pool', 'acquired', { active: this.active, cap: this.cap() });
-      reportMetric('pool_active', this.active);
-      return () => this.release();
+    if (this.active >= this.cap()) {
+      log.info('pool', 'wait', { active: this.active, cap: this.cap(), waiting: this.waiters.length + 1 });
+      reportMetric('pool_waiting', this.waiters.length + 1);
     }
-    log.info('pool', 'wait', { active: this.active, cap: this.cap(), waiting: this.waiters.length + 1 });
-    reportMetric('pool_waiting', this.waiters.length + 1);
-    await new Promise<void>((resolve) => this.waiters.push(resolve));
+    // Loop, not a single wait: a tryAcquire() continuation queued between
+    // release() waking us and this resume may have taken the freed slot —
+    // incrementing without re-checking would exceed the cap.
+    while (this.active >= this.cap()) {
+      await new Promise<void>((resolve) => this.waiters.push(resolve));
+    }
     this.active++;
     log.info('pool', 'acquired', { active: this.active, cap: this.cap() });
     reportMetric('pool_active', this.active);

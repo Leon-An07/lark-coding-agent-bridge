@@ -86,41 +86,48 @@ export class MediaCache {
     // otherwise sit entirely in the JS heap before being rejected. It returns
     // the server content-type so we can pick an accurate extension, falling
     // back to defaultMime(kind) when absent.
-    const { contentType } = await this.channel.downloadResourceToFile(
-      messageId,
-      r.fileKey,
-      r.type === 'image' ? 'image' : 'file',
-      tmpPath,
-    );
-
-    const tmpStat = await stat(tmpPath);
-    const hash = await hashFile(tmpPath);
-    const mime = contentType ?? defaultMime(kind);
-    const ext = safeExtensionForMime(mime);
-    const absPath = join(this.rootDir, `${hash}.${ext}`);
     try {
-      await stat(absPath);
-      await rm(tmpPath, { force: true });
-      log.info('media', 'cache-hit', { path: absPath });
-    } catch {
-      await rename(tmpPath, absPath);
+      const { contentType } = await this.channel.downloadResourceToFile(
+        messageId,
+        r.fileKey,
+        r.type === 'image' ? 'image' : 'file',
+        tmpPath,
+      );
+
+      const tmpStat = await stat(tmpPath);
+      const hash = await hashFile(tmpPath);
+      const mime = contentType ?? defaultMime(kind);
+      const ext = safeExtensionForMime(mime);
+      const absPath = join(this.rootDir, `${hash}.${ext}`);
+      try {
+        await stat(absPath);
+        await rm(tmpPath, { force: true });
+        log.info('media', 'cache-hit', { path: absPath });
+      } catch {
+        await rename(tmpPath, absPath);
+      }
+      const candidate: AttachmentCandidate = {
+        absPath,
+        kind,
+        size: tmpStat.size,
+        mime,
+        hash,
+        source: 'lark',
+        sourceMessageId: messageId,
+        sourceFileKey: r.fileKey,
+        ...(r.fileName ? { originalName: r.fileName } : {}),
+      };
+      log.info('media', 'downloaded', {
+        path: candidate.absPath,
+        size: candidate.size,
+      });
+      return candidate;
+    } catch (err) {
+      // A failed download/hash must not strand the .tmp-* file (only the
+      // 512MB-cap sweep would ever reclaim it). Harmless after rename.
+      await rm(tmpPath, { force: true }).catch(() => {});
+      throw err;
     }
-    const candidate: AttachmentCandidate = {
-      absPath,
-      kind,
-      size: tmpStat.size,
-      mime,
-      hash,
-      source: 'lark',
-      sourceMessageId: messageId,
-      sourceFileKey: r.fileKey,
-      ...(r.fileName ? { originalName: r.fileName } : {}),
-    };
-    log.info('media', 'downloaded', {
-      path: candidate.absPath,
-      size: candidate.size,
-    });
-    return candidate;
   }
 }
 

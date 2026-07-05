@@ -116,7 +116,7 @@ export class CallbackAuth {
     const nonceState = this.nonceStore.state(payload.n);
     if (nonceState === 'revoked') return { ok: false, reason: 'nonce-revoked' };
     if (nonceState === 'used') return { ok: false, reason: 'nonce-replay' };
-    if (!this.nonceStore.consume(payload.n)) {
+    if (!this.nonceStore.consume(payload.n, payload.exp)) {
       return { ok: false, reason: 'nonce-replay' };
     }
     return { ok: true, payload };

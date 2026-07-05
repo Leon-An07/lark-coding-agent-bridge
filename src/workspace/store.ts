@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, rename } from 'node:fs/promises';
 import { paths } from '../config/paths';
 import { log } from '../core/logger';
 import { writeFileAtomic } from '../platform/atomic-write';
@@ -27,7 +27,14 @@ export class WorkspaceStore {
       };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
-      throw err;
+      // A corrupt file must not brick startup into a launchd relaunch loop.
+      // Quarantine it and start empty — losing chat→cwd mappings beats an
+      // unbootable bot.
+      log.fail('workspaces', err, { path: this.path, action: 'quarantine-and-start-empty' });
+      await rename(this.path, `${this.path}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`).catch(
+        () => {},
+      );
+      this.data = { chats: {}, named: {} };
     }
   }
 

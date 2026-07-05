@@ -256,6 +256,10 @@ async function withRegistryFileLock<T>(registryFile: string, fn: () => Promise<T
     realpath: false,
     stale: 30_000,
     update: 10_000,
+    // Registry writes are short critical sections; without retries two
+    // daemons booting simultaneously (launchd at login) make the loser's
+    // register() throw ELOCKED and abort its startup.
+    retries: { retries: 5, minTimeout: 100, maxTimeout: 1000 },
   });
   try {
     return await fn();

@@ -72,7 +72,7 @@ export class ClaudeAdapter implements AgentAdapter {
     // fallback the stale id also stays in sessions.json, so every following
     // message in the chat fails the same way. Retry once without --resume;
     // the fresh run's init event then overwrites the stored session id.
-    const holder = { active: first };
+    const holder = { active: first, stopped: false };
     const spawnFresh = (): AgentRun => this.spawnOnce({ ...opts, sessionId: undefined });
     async function* events(): AsyncGenerator<AgentEvent> {
       let sawSubstantive = false;
@@ -80,7 +80,12 @@ export class ClaudeAdapter implements AgentAdapter {
         if (evt.type === 'text' || evt.type === 'thinking' || evt.type === 'tool_use') {
           sawSubstantive = true;
         }
-        if (evt.type === 'error' && !sawSubstantive && DEAD_SESSION_RE.test(evt.message)) {
+        if (
+          evt.type === 'error' &&
+          !sawSubstantive &&
+          !holder.stopped &&
+          DEAD_SESSION_RE.test(evt.message)
+        ) {
           log.warn('agent', 'resume-fallback', {
             sessionId: opts.sessionId,
             err: evt.message.slice(0, 200),
@@ -96,7 +101,10 @@ export class ClaudeAdapter implements AgentAdapter {
     return {
       runId: opts.runId,
       events: events(),
-      stop: () => holder.active.stop(),
+      stop: () => {
+        holder.stopped = true;
+        return holder.active.stop();
+      },
       waitForExit: (timeoutMs: number) => holder.active.waitForExit(timeoutMs),
     };
   }
@@ -142,11 +150,20 @@ export class ClaudeAdapter implements AgentAdapter {
     // The 'error' and exit-related events can fire in the next tick; if we
     // defer attachment to the async-generator body, those events fire into
     // the void and the generator hangs.
+    // Kept only for the exit-code error message (truncated there anyway), so
+    // retain a bounded tail — a stderr-chatty run used to grow this for its
+    // whole lifetime.
     const stderrChunks: Buffer[] = [];
+    let stderrBytes = 0;
     let runtimeError: Error | null = null;
     let stderrBuffer = '';
     child.stderr.on('data', (chunk: Buffer) => {
       stderrChunks.push(chunk);
+      stderrBytes += chunk.length;
+      while (stderrBytes > 8192 && stderrChunks.length > 1) {
+        stderrBytes -= stderrChunks[0]!.length;
+        stderrChunks.shift();
+      }
       stderrBuffer += chunk.toString('utf8');
       let nl = stderrBuffer.indexOf('\n');
       while (nl !== -1) {
@@ -175,12 +192,14 @@ export class ClaudeAdapter implements AgentAdapter {
     // SIGKILL cascade. Callers (channel.ts, /doctor) override per-run with
     // a value derived from preferences.
     const stopGraceMs = opts.stopGraceMs ?? 5000;
+    let stopRequested = false;
 
     return {
       runId: opts.runId,
-      events: createEventStream(child, stderrChunks, () => runtimeError),
+      events: createEventStream(child, stderrChunks, () => runtimeError, () => stopRequested),
       async stop() {
         if (child.exitCode !== null || child.signalCode !== null) return;
+        stopRequested = true;
         log.info('agent', 'stop-sigterm', { pid: child.pid ?? null, graceMs: stopGraceMs });
         killProcessTree(child, 'SIGTERM');
         await new Promise<void>((resolve) => {
@@ -225,6 +244,7 @@ async function* createEventStream(
   child: ClaudeChild,
   stderrChunks: Buffer[],
   getError: () => Error | null,
+  wasStopped: () => boolean,
 ): AsyncGenerator<AgentEvent> {
   // If fork itself failed synchronously, child.pid is undefined. The 'error'
   // event (ENOENT etc.) fires in the next tick, so also check getError().
@@ -300,6 +320,15 @@ async function* createEventStream(
     yield {
       type: 'error',
       message: `claude runtime error: ${runtimeError.message}`,
+      terminationReason: 'failed',
+    };
+  } else if (exitCode === null && child.signalCode && !wasStopped()) {
+    // Killed by a signal we didn't send (OOM killer, external kill, crash).
+    // exitCode stays null in that case, so without this branch the stream
+    // ends silently and the run is finalized as success.
+    yield {
+      type: 'error',
+      message: `claude killed by signal ${child.signalCode}`,
       terminationReason: 'failed',
     };
   }
