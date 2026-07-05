@@ -1,3 +1,5 @@
+import { DEFAULT_LOCALE, normalizeLocale, type Locale } from '../i18n';
+
 export type TenantBrand = 'feishu' | 'lark';
 
 /**
@@ -149,6 +151,13 @@ export interface AppPreferences {
    * Range 100-30000; out-of-range values fall back to default.
    */
   agentStopGraceMs?: number;
+  /**
+   * UI language for all user-facing output (IM replies, cards, CLI).
+   * 'zh-CN' | 'en-US' (loose values like 'en' / 'zh_CN' are normalized).
+   * Default zh-CN. Does not affect the agent's own answers — those follow
+   * the language the user writes in.
+   */
+  language?: string;
 }
 
 /**
@@ -278,6 +287,11 @@ export function getAgentStopGraceMs(cfg: AppConfig): number {
   const raw = cfg.preferences?.agentStopGraceMs;
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return 5000;
   return Math.min(30_000, Math.max(100, Math.floor(raw)));
+}
+
+/** UI language: preferences.language → normalized locale, default zh-CN. */
+export function getLanguage(cfg: AppConfig): Locale {
+  return normalizeLocale(cfg.preferences?.language) ?? DEFAULT_LOCALE;
 }
 
 /**

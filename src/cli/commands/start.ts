@@ -18,7 +18,8 @@ import {
   type ProfileConfig,
 } from '../../config/profile-schema';
 import type { AppConfig } from '../../config/schema';
-import { isComplete } from '../../config/schema';
+import { getLanguage, isComplete } from '../../config/schema';
+import { setActiveLocale } from '../../i18n';
 import { configureLogger, gcOldLogs, log, reportError } from '../../core/logger';
 import { loadTelemetryAdapter, telemetry } from '../../core/telemetry';
 import { gcMediaCache } from '../../media/cache';
@@ -94,6 +95,7 @@ export async function runStart(opts: StartOptions): Promise<void> {
     },
   });
   let cfg = runtime.cfg;
+  setActiveLocale(getLanguage(cfg));
   const configPath = runtime.configPath;
   const appPaths = runtime.appPaths;
   let profileConfig = runtime.profileConfig;
