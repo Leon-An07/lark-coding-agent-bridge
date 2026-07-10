@@ -3,6 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { CommentEvent, LarkChannel } from '@larksuite/channel';
 import { claudeCapability, codexCapability } from '../agent/capability';
+import { resolveModelArg } from '../agent/models';
 import type { AgentAdapter, AgentEvent } from '../agent/types';
 import { getAgentStopGraceMs, getEffort } from '../config/schema';
 import type { Controls } from '../commands';
@@ -262,6 +263,10 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
         policy,
         sessionId,
         threadId,
+        model: resolveModelArg(
+          controls.profileConfig.agentKind,
+          controls.profileConfig.preferences.model,
+        ),
         effort: getEffort(controls.cfg),
         stopGraceMs: getAgentStopGraceMs(controls.cfg),
         observability: {

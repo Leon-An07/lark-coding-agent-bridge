@@ -352,12 +352,6 @@ export function configSavedCard(opts: ConfigFormOpts): object {
   };
 }
 
-function cotMessagesLabel(value: CotMessagesMode): string {
-  if (value === 'brief') return '简略';
-  if (value === 'detailed') return '详细';
-  return '关闭';
-}
-
 /**
  * Shown after `/config` saves "群里不需要 @ bot" but the app is missing the
  * `im:message.group_msg` scope. Guides the user through one-click incremental
