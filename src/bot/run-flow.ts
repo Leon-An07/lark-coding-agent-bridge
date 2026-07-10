@@ -1,4 +1,5 @@
 import type { AgentCapability } from '../agent/capability';
+import { resolveModelArg } from '../agent/models';
 import type { AgentEvent } from '../agent/types';
 import type { ProfileConfig } from '../config/profile-schema';
 import { msgs } from '../i18n';
@@ -35,9 +36,9 @@ export interface StartRunFlowInput {
   executor: RunExecutor;
   now: number;
   stopGraceMs?: number;
-  /** Global default model / reasoning-effort, resolved from preferences by
-   * the caller (where cfg is in scope). Claude-only; codex ignores them. */
-  model?: string;
+  /** Global default reasoning-effort, resolved from preferences by the caller
+   * (where cfg is in scope). Claude-only; codex ignores it. Model is resolved
+   * inside the flow from `profileConfig.preferences.model` via resolveModelArg. */
   effort?: string;
   observability?: {
     profile: string;
@@ -148,7 +149,10 @@ export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFl
       policy,
       sessionId,
       threadId,
-      model: input.model,
+      model: resolveModelArg(
+        input.profileConfig.agentKind,
+        input.profileConfig.preferences.model,
+      ),
       effort: input.effort,
       images:
         input.capability.agentId === 'codex'

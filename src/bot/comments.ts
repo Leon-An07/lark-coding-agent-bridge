@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import type { CommentEvent, LarkChannel } from '@larksuite/channel';
 import { claudeCapability, codexCapability } from '../agent/capability';
 import type { AgentAdapter, AgentEvent } from '../agent/types';
-import { getAgentStopGraceMs, getEffort, getModel } from '../config/schema';
+import { getAgentStopGraceMs, getEffort } from '../config/schema';
 import type { Controls } from '../commands';
 import { resolveAppPaths } from '../config/app-paths';
 import { log } from '../core/logger';
@@ -65,6 +65,11 @@ export interface CommentContext {
    * we react on. Undefined when we couldn't pinpoint a reply (top-level
    * comment with no replies fetched, etc.). */
   targetReplyId?: string;
+  /** Text of the replies in this comment thread that came before the @bot
+   * reply, chronological. Feishu delivers the whole thread but the bot is only
+   * @-ed on one reply; without these it can't see what the thread is about (a
+   * bare "说说你的思考" points at a discussion it would otherwise never see). */
+  priorReplies: string[];
 }
 
 export interface ExtractCommentQuestionInput {
@@ -257,7 +262,6 @@ export async function handleCommentMention(deps: CommentDeps): Promise<void> {
         policy,
         sessionId,
         threadId,
-        model: getModel(controls.cfg),
         effort: getEffort(controls.cfg),
         stopGraceMs: getAgentStopGraceMs(controls.cfg),
         observability: {
@@ -415,12 +419,37 @@ async function fetchCommentContext(
   const fetched = await channel.comments.fetch(target, evt.commentId);
   const replies = fetched?.replies ?? [];
   const parsed = extractCommentQuestionFromReplies({ replyId: evt.replyId, replies });
+  // The whole thread comes back, but only one reply @-ed the bot. Carry the
+  // replies before it as context so the agent sees the discussion it's being
+  // pulled into, not just the pointer reply. `targetIdx < 0` (no reply_id, so
+  // the parser fell back to the last reply) → everything except that last one.
+  const targetIdx = parsed?.targetReplyId
+    ? replies.findIndex((reply) => reply.reply_id === parsed.targetReplyId)
+    : replies.length - 1;
+  const priorReplies = (targetIdx > 0 ? replies.slice(0, targetIdx) : [])
+    .map(replyElementsToText)
+    .filter((text) => text.length > 0);
   return {
     question: parsed?.question ?? '',
     quote: fetched?.quote,
     isWhole: Boolean(fetched?.isWhole),
     targetReplyId: parsed?.targetReplyId,
+    priorReplies,
   };
+}
+
+/** Flatten a comment reply's content elements into plain text (text runs and
+ * doc links; @-mention `person` elements are dropped as they carry no text). */
+function replyElementsToText(reply: CommentReply): string {
+  const elements = reply.content?.elements ?? [];
+  return elements
+    .map((el) => {
+      if (el.type === 'text_run') return el.text_run?.text ?? '';
+      if (el.type === 'docs_link') return el.docs_link?.url ?? '';
+      return '';
+    })
+    .join('')
+    .trim();
 }
 
 export function extractCommentQuestionFromReplies(
@@ -433,15 +462,7 @@ export function extractCommentQuestionFromReplies(
   targetReply ??= input.replies.at(-1);
   if (!targetReply) return null;
 
-  const elements = targetReply.content?.elements ?? [];
-  const question = elements
-    .map((el) => {
-      if (el.type === 'text_run') return el.text_run?.text ?? '';
-      if (el.type === 'docs_link') return el.docs_link?.url ?? '';
-      return '';
-    })
-    .join('')
-    .trim();
+  const question = replyElementsToText(targetReply);
   return { question, targetReplyId: targetReply.reply_id };
 }
 
@@ -461,6 +482,13 @@ export function buildCommentPrompt(
   if (ctx.quote) {
     parts.push('');
     parts.push(`用户选中的原文：\n> ${ctx.quote.replace(/\n/g, '\n> ')}`);
+  }
+  if (ctx.priorReplies.length > 0) {
+    parts.push('');
+    parts.push('这条评论 thread 里此前的讨论（按时间顺序，@你的那条不在其中）：');
+    ctx.priorReplies.forEach((text, i) => {
+      parts.push(`${i + 1}. ${text}`);
+    });
   }
   parts.push('');
   parts.push(`用户的问题：${ctx.question}`);

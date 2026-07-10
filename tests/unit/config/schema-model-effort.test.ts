@@ -1,30 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { getEffort, getModel, type AppConfig } from '../../../src/config/schema.js';
+import { getEffort, type AppConfig } from '../../../src/config/schema.js';
 
+// Model resolution moved to agent/models.ts (resolveModelArg) after the
+// upstream merge — the model picker is agent-kind aware there. This file now
+// only covers the effort preference resolver, which is bridge-local.
 function cfg(preferences?: AppConfig['preferences']): AppConfig {
   return {
     accounts: { app: { id: 'app', secret: 'secret', tenant: 'feishu' } },
     ...(preferences ? { preferences } : {}),
   };
 }
-
-describe('getModel', () => {
-  it('returns undefined when unset (→ CLI default)', () => {
-    expect(getModel(cfg())).toBeUndefined();
-    expect(getModel(cfg({}))).toBeUndefined();
-  });
-
-  it('passes through any non-empty string (alias or full id)', () => {
-    expect(getModel(cfg({ model: 'opus' }))).toBe('opus');
-    expect(getModel(cfg({ model: 'claude-opus-4-8' }))).toBe('claude-opus-4-8');
-  });
-
-  it('trims and treats blank / non-string as unset', () => {
-    expect(getModel(cfg({ model: '  sonnet  ' }))).toBe('sonnet');
-    expect(getModel(cfg({ model: '   ' }))).toBeUndefined();
-    expect(getModel(cfg({ model: 123 as unknown as string }))).toBeUndefined();
-  });
-});
 
 describe('getEffort', () => {
   it('returns undefined when unset (→ CLI default)', () => {

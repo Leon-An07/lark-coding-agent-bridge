@@ -111,10 +111,17 @@ export interface AppPreferences {
    */
   showToolCalls?: boolean;
   /**
-   * Send a separate Lark COT (思考过程) message before the final answer via the
-   * native message_cot OpenAPI. `off` (default) = no COT; `brief` = key steps +
-   * tool titles; `detailed` = also reasoning text + tool args/output. The
-   * publisher degrades to a no-op if the app lacks the message_cot permission.
+   * Model the underlying agent runs with, forwarded as `--model`. The catalog
+   * of valid values is agent-kind specific — see `agent/models.ts`. `undefined`
+   * or the `'default'` sentinel means "don't pass `--model`" so the agent
+   * CLI / account default applies. Default: unset.
+   */
+  model?: string;
+  /**
+   * Whether to send a separate Lark COT process message before the final
+   * answer. `brief` mirrors the lightweight tool/progress visibility from
+   * the legacy tool display; `detailed` also includes tool args/output.
+   * Legacy boolean/string `on` is accepted by the resolver for upgrades.
    */
   cotMessages?: CotMessagesMode | 'on' | 'simple';
   /**
@@ -123,14 +130,6 @@ export interface AppPreferences {
    * topic can spawn its own run; capping protects RAM / token spend.
    */
   maxConcurrentRuns?: number;
-  /**
-   * Global default model for agent runs. Passed to the claude CLI as
-   * `--model` (alias like 'opus' / 'sonnet' / 'fable', or a full model id like
-   * 'claude-opus-4-8'). Undefined / empty = don't pass `--model`, let the CLI
-   * use its own default (the pre-0.3 behavior). Only the claude adapter reads
-   * this; the codex adapter ignores it.
-   */
-  model?: string;
   /**
    * Global default reasoning-effort for agent runs. Passed to the claude CLI
    * as `--effort` (one of low / medium / high / xhigh / max). Undefined /
@@ -259,20 +258,6 @@ export function getMaxConcurrentRuns(cfg: AppConfig): number {
  * both the parser (`getEffort`) and the `/config` dropdown. */
 export const AGENT_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type AgentEffort = (typeof AGENT_EFFORT_LEVELS)[number];
-
-/**
- * Resolve the global default model. Returns `undefined` when unset so the
- * caller omits `--model` and the claude CLI falls back to its own default
- * (the pre-0.3 behavior). Any non-empty string is passed through verbatim —
- * the CLI accepts aliases ('opus' / 'sonnet' / 'fable') and full model ids,
- * so we don't restrict the set here.
- */
-export function getModel(cfg: AppConfig): string | undefined {
-  const raw = cfg.preferences?.model;
-  if (typeof raw !== 'string') return undefined;
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
 
 /**
  * Resolve the global default reasoning-effort. Returns `undefined` when unset

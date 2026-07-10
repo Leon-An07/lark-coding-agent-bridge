@@ -45,7 +45,8 @@ export async function resolveWorkingDirectory(
   }
 
   const tempRealpath = await realpath(tmpdir()).catch(() => resolve(tmpdir()));
-  const broad = classifyHighRiskWorkingDirectory(resolved, requestedCwd, tempRealpath);
+  const homeRealpath = await realpath(homedir()).catch(() => resolve(homedir()));
+  const broad = classifyHighRiskWorkingDirectory(resolved, requestedCwd, tempRealpath, homeRealpath);
   if (broad) return broad;
 
   return {
@@ -67,13 +68,14 @@ function classifyHighRiskWorkingDirectory(
   real: string,
   requestedCwd: string,
   tempRealpath: string,
+  homeRealpath: string,
 ): WorkingDirectoryResolveResult | undefined {
   const m = msgs().policy;
   if (real === dirname(real)) {
     return reject('filesystem-root', requestedCwd, m.filesystemRoot);
   }
 
-  const home = resolve(homedir());
+  const home = homeRealpath;
   if (real === home) {
     return reject('home-root', requestedCwd, m.homeRoot);
   }

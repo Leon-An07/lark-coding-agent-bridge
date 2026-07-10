@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute } from 'node:path';
 import type { LarkChannel, NormalizedMessage } from '@larksuite/channel';
 import { claudeCapability, codexCapability } from '../agent/capability';
+import { DEFAULT_MODEL, normalizeModelSelection, supportedModels } from '../agent/models';
 import type { AgentAdapter } from '../agent/types';
 import type { ActiveRuns } from '../bot/active-runs';
 import {
@@ -44,7 +45,6 @@ import {
   getLanguage,
   getMaxConcurrentRuns,
   getMessageReplyMode,
-  getModel,
   getRequireMentionInGroup,
   getRunIdleTimeoutMs,
   getShowToolCalls,
@@ -284,7 +284,7 @@ export async function runCommandHandler(
  */
 async function reply(ctx: CommandContext, markdown: string): Promise<void> {
   try {
-    await ctx.channel.send(ctx.msg.chatId, { markdown }, { replyTo: ctx.msg.messageId });
+    await ctx.channel.send(ctx.msg.chatId, { markdown }, commandReplyOptions(ctx));
   } catch (err) {
     log.fail('command', err, { step: 'reply' });
     reportMetric('command_fail', 1, { step: 'reply' });
@@ -294,13 +294,20 @@ async function reply(ctx: CommandContext, markdown: string): Promise<void> {
       await ctx.channel.send(
         ctx.msg.chatId,
         { markdown: auditSafeReply },
-        { replyTo: ctx.msg.messageId },
+        commandReplyOptions(ctx),
       );
     } catch (fallbackErr) {
       log.fail('command', fallbackErr, { step: 'reply-audit-fallback' });
       reportMetric('command_fail', 1, { step: 'reply-audit-fallback' });
     }
   }
+}
+
+function commandReplyOptions(ctx: CommandContext): { replyTo: string; replyInThread?: true } {
+  return {
+    replyTo: ctx.msg.messageId,
+    ...(ctx.chatMode === 'topic' && ctx.msg.threadId ? { replyInThread: true as const } : {}),
+  };
 }
 
 function isMessageAuditReject(err: unknown): boolean {
@@ -431,7 +438,7 @@ async function handleWsList(ctx: CommandContext): Promise<void> {
     currentCwd,
     named,
   );
-  await ctx.channel.send(ctx.msg.chatId, { card }, { replyTo: ctx.msg.messageId });
+  await ctx.channel.send(ctx.msg.chatId, { card }, commandReplyOptions(ctx));
 }
 
 async function handleWsSave(name: string, ctx: CommandContext): Promise<void> {
@@ -577,7 +584,7 @@ async function handleResume(args: string, ctx: CommandContext): Promise<void> {
         };
       });
       const card = resumeCard(cwd, entries);
-      await ctx.channel.send(ctx.msg.chatId, { card }, { replyTo: ctx.msg.messageId });
+      await ctx.channel.send(ctx.msg.chatId, { card }, commandReplyOptions(ctx));
       return;
     }
     if (entry?.threadId && identity) {
@@ -586,7 +593,7 @@ async function handleResume(args: string, ctx: CommandContext): Promise<void> {
       return;
     }
     const card = resumeCard(cwd, []);
-    await ctx.channel.send(ctx.msg.chatId, { card }, { replyTo: ctx.msg.messageId });
+    await ctx.channel.send(ctx.msg.chatId, { card }, commandReplyOptions(ctx));
     return;
   }
 
@@ -604,7 +611,7 @@ async function handleResume(args: string, ctx: CommandContext): Promise<void> {
     current: s.sessionId === currentSession?.sessionId,
   }));
   const card = resumeCard(cwd, entries);
-  await ctx.channel.send(ctx.msg.chatId, { card }, { replyTo: ctx.msg.messageId });
+  await ctx.channel.send(ctx.msg.chatId, { card }, commandReplyOptions(ctx));
 }
 
 async function applyResume(sessionId: string, ctx: CommandContext): Promise<void> {
@@ -825,13 +832,14 @@ async function handleStatus(_args: string, ctx: CommandContext): Promise<void> {
     runtimeAccess: runtimeAccessStatus(ctx.controls.profileConfig),
     larkCliStatus: await larkCliStatus(ctx),
     activeRun: Boolean(ctx.activeRuns.get(ctx.scope)),
+    activeScopes: ctx.activeRuns.scopes().filter((scope) => !scope.startsWith('comment:')),
     activeCommentScopes: ctx.activeRuns.scopes().filter((scope) => scope.startsWith('comment:')),
     queue: ctx.processPool?.snapshot(),
     ownerState: formatOwnerState(ctx),
     scope: ctx.scope,
     chatMode: ctx.chatMode,
   });
-  await ctx.channel.send(ctx.msg.chatId, { card }, { replyTo: ctx.msg.messageId });
+  await ctx.channel.send(ctx.msg.chatId, { card }, commandReplyOptions(ctx));
 }
 
 function formatOwnerState(ctx: CommandContext): string {
@@ -1176,7 +1184,6 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
       scopeId: `${ctx.scope}:doctor`,
       policy,
       nowait: true,
-      model: getModel(ctx.controls.cfg),
       effort: getEffort(ctx.controls.cfg),
       stopGraceMs: getAgentStopGraceMs(ctx.controls.cfg),
       observability: {
@@ -1325,7 +1332,7 @@ function formatDoctorEchoStatus(echoText: string, state: RunState): string {
 
 async function handleHelp(_args: string, ctx: CommandContext): Promise<void> {
   const card = helpCard(ctx.agent.displayName);
-  await ctx.channel.send(ctx.msg.chatId, { card }, { replyTo: ctx.msg.messageId });
+  await ctx.channel.send(ctx.msg.chatId, { card }, commandReplyOptions(ctx));
 }
 
 // ─── /account ─────────────────────────────────────────────────────────────
@@ -1355,7 +1362,7 @@ async function showCurrent(ctx: CommandContext): Promise<void> {
     botName: ctx.channel.botIdentity?.name,
     tenant: ctx.controls.cfg.accounts.app.tenant,
   });
-  await ctx.channel.send(ctx.msg.chatId, { card }, { replyTo: ctx.msg.messageId });
+  await ctx.channel.send(ctx.msg.chatId, { card }, commandReplyOptions(ctx));
 }
 
 async function showForm(ctx: CommandContext): Promise<void> {
@@ -1363,7 +1370,7 @@ async function showForm(ctx: CommandContext): Promise<void> {
   if (ctx.fromCardAction) {
     await recallMessage(ctx, ctx.msg.messageId);
   }
-  await sendManagedCard(ctx.channel, ctx.msg.chatId, card);
+  await sendManagedCard(ctx.channel, ctx.msg.chatId, card, commandReplyOptions(ctx));
 }
 
 async function cancelAccount(ctx: CommandContext): Promise<void> {
@@ -1386,6 +1393,7 @@ async function submitAccount(ctx: CommandContext): Promise<void> {
   const formMsgId = ctx.msg.messageId;
   const channel = ctx.channel;
   const restart = ctx.controls.restart;
+  const retryReplyOptions = commandReplyOptions(ctx);
 
   // CRITICAL: detach the work from the cardAction handler. Lark's client
   // keeps the form locked while the handler is pending — if we await the
@@ -1431,7 +1439,7 @@ async function submitAccount(ctx: CommandContext): Promise<void> {
         initialTenant: tenant,
         prefillAppId: appId,
       });
-      await sendManagedCard(channel, chatId, retry).catch((err) =>
+      await sendManagedCard(channel, chatId, retry, retryReplyOptions).catch((err) =>
         console.warn('[account] post retry form failed:', err),
       );
     };
@@ -1821,10 +1829,14 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
   // Assembled in a variable (not an inline literal) so the extra `language`
   // key stays compatible whether or not ConfigFormOpts declares it yet.
   const formOpts = {
+    agentKind: ctx.controls.profileConfig.agentKind,
+    model: normalizeModelSelection(
+      ctx.controls.profileConfig.agentKind,
+      ctx.controls.cfg.preferences?.model,
+    ),
     messageReply: getMessageReplyMode(ctx.controls.cfg),
     showToolCalls: getShowToolCalls(ctx.controls.cfg),
     cotMessages: getCotMessages(ctx.controls.cfg),
-    model: getModel(ctx.controls.cfg),
     effort: getEffort(ctx.controls.cfg),
     maxConcurrentRuns: getMaxConcurrentRuns(ctx.controls.cfg),
     runIdleTimeoutMinutes: ms ? Math.round(ms / 60_000) : 0,
@@ -1840,7 +1852,7 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
   };
   const card = configFormCard(formOpts);
   if (ctx.fromCardAction) await recallMessage(ctx, ctx.msg.messageId);
-  await sendManagedCard(ctx.channel, ctx.msg.chatId, card);
+  await sendManagedCard(ctx.channel, ctx.msg.chatId, card, commandReplyOptions(ctx));
 }
 
 async function showResultCardInPlace(
@@ -1852,7 +1864,7 @@ async function showResultCardInPlace(
     await updateManagedCard(ctx.channel, formMsgId, card);
   } catch (err) {
     log.warn('command', 'config-card-update-fallback', { err: String(err) });
-    await sendManagedCard(ctx.channel, ctx.msg.chatId, card).catch((fallbackErr) =>
+    await sendManagedCard(ctx.channel, ctx.msg.chatId, card, commandReplyOptions(ctx)).catch((fallbackErr) =>
       log.warn('command', 'config-card-fallback-send-failed', {
         err: String(fallbackErr),
       }),
@@ -1884,12 +1896,25 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
       : getMessageReplyMode(ctx.controls.cfg);
   const rawTools = String(fv.show_tool_calls ?? '').trim();
   const showToolCalls = rawTools !== 'hide';
-  const rawCot = String(fv.cot_messages ?? '').trim();
-  const cotMessages: CotMessagesMode =
-    rawCot === 'brief' || rawCot === 'detailed' ? rawCot : 'off';
-  // Parse model (free text). Empty / 'default' clears it → CLI default.
+  // Parse the model picker. Unexpected / empty values keep the current
+  // selection. Store `undefined` for the "default" sentinel to keep config
+  // tidy (resolveModelArg treats both the same way).
+  const agentKind = ctx.controls.profileConfig.agentKind;
   const rawModel = String(fv.model ?? '').trim();
-  const model = rawModel === '' || rawModel === 'default' ? undefined : rawModel;
+  const modelValid = rawModel !== '' && supportedModels(agentKind).some((m) => m.value === rawModel);
+  const modelSelection = modelValid
+    ? rawModel
+    : normalizeModelSelection(agentKind, ctx.controls.cfg.preferences?.model);
+  const model = modelSelection === DEFAULT_MODEL ? undefined : modelSelection;
+  const rawCotMessages = String(fv.cot_messages ?? '').trim();
+  const cotMessages =
+    rawCotMessages === 'brief'
+      ? 'brief'
+      : rawCotMessages === 'detailed' || rawCotMessages === 'on'
+        ? 'detailed'
+        : rawCotMessages === 'off'
+          ? 'off'
+          : getCotMessages(ctx.controls.cfg);
   // Parse effort. Empty / unrecognized clears it → CLI default.
   const rawEffort = String(fv.effort ?? '').trim() as AgentEffort;
   const effort: AgentEffort | undefined = AGENT_EFFORT_LEVELS.includes(rawEffort)
@@ -1955,6 +1980,7 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
 
     const nextPreferences: AppPreferences = {
       ...(ctx.controls.cfg.preferences ?? {}),
+      model,
       messageReply,
       // Mark the messageReply value as living in the new (post-0.1.27)
       // semantic — `text` now means real plain text, not the lightweight
@@ -1963,7 +1989,6 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
       messageReplyMigrated: true,
       showToolCalls,
       cotMessages,
-      model,
       effort,
       maxConcurrentRuns,
       runIdleTimeoutMinutes,
@@ -2016,6 +2041,7 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
       showToolCalls,
       model,
       effort,
+      cotMessages,
       maxConcurrentRuns,
       runIdleTimeoutMinutes,
       requireMentionInGroup,
@@ -2029,10 +2055,11 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
     // Variable (not inline literal) for the same reason as in showConfigForm:
     // keeps the extra `language` key compatible with ConfigFormOpts.
     const savedOpts = {
+      agentKind,
+      model: modelSelection,
       messageReply,
       showToolCalls,
       cotMessages,
-      model,
       effort,
       maxConcurrentRuns,
       runIdleTimeoutMinutes,

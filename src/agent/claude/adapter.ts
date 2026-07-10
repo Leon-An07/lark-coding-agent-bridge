@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { Readable } from 'node:stream';
+import type { Readable, Writable } from 'node:stream';
 import { log } from '../../core/logger';
 import {
   killProcessTree,
@@ -25,7 +28,7 @@ export interface ClaudeAdapterOptions {
   larkChannel?: LarkChannelEnvContext;
 }
 
-type ClaudeChild = SpawnedProcessByStdio<null, Readable, Readable>;
+type ClaudeChild = SpawnedProcessByStdio<Writable, Readable, Readable>;
 
 /** Error text claude prints when `--resume` points at a session that no
  * longer exists (or never did). Empirically verified against claude CLI:
@@ -114,16 +117,25 @@ export class ClaudeAdapter implements AgentAdapter {
       throw new Error('cwd is required for ClaudeAdapter.run');
     }
 
+    // The prompt and bridge system prompt must NOT go through argv. On Windows,
+    // `claude` resolves to a `claude.cmd` shim and cross-spawn routes it through
+    // `cmd.exe /d /s /c`, which interprets `<` and `>` as redirection operators
+    // — that silently eats the prompt's `<bridge_context>` XML, so claude runs
+    // with an empty request and replies with its default greeting instead of a
+    // stream-json response. Pass the prompt via stdin and the appended system
+    // prompt via a temp file (the same approach the Codex adapter uses) so no
+    // special characters ever reach the shell.
+    const systemPromptFile = writeSystemPromptFile(buildBridgeSystemPrompt(this.botIdentity));
+
     const args = [
       '-p',
-      opts.prompt,
       '--output-format',
       'stream-json',
       '--verbose',
       '--permission-mode',
       opts.permissionMode ?? CLAUDE_DEFAULT_PERMISSION_MODE,
-      '--append-system-prompt',
-      buildBridgeSystemPrompt(this.botIdentity),
+      '--append-system-prompt-file',
+      systemPromptFile.path,
     ];
     if (opts.sessionId) args.push('--resume', opts.sessionId);
     if (opts.model) args.push('--model', opts.model);
@@ -132,7 +144,9 @@ export class ClaudeAdapter implements AgentAdapter {
     const child = spawnProcess(this.binary, args, {
       cwd: opts.cwd,
       env: mergeProcessEnv(process.env, buildLarkChannelEnv(this.larkChannel)),
-      stdio: ['ignore', 'pipe', 'pipe'],
+      // stdin piped so the prompt is written via stdin (avoids the Windows
+      // cmd.exe redirection-operator bug that ate <bridge_context>).
+      stdio: ['pipe', 'pipe', 'pipe'],
       // Own process group (POSIX) so stop() can signal the whole tree —
       // claude's own children (Bash, MCP servers) would otherwise survive
       // the SIGKILL escalation as orphans.
@@ -183,10 +197,16 @@ export class ClaudeAdapter implements AgentAdapter {
 
     child.on('error', (err) => {
       runtimeError = err;
+      systemPromptFile.cleanup();
     });
     child.on('exit', (code, signal) => {
       log.info('agent', 'exit', { pid: child.pid ?? null, code, signal });
+      systemPromptFile.cleanup();
     });
+    child.stdin.on('error', (err) => {
+      log.warn('agent', 'stdin-error', { message: err.message });
+    });
+    child.stdin.end(opts.prompt, 'utf8');
 
     // Default 5s if caller didn't specify — claude often has live
     // subprocesses (lark-cli waiting for OAuth, long Bash, etc.) and the
@@ -334,6 +354,27 @@ async function* createEventStream(
       terminationReason: 'failed',
     };
   }
+}
+
+/**
+ * Persist the appended system prompt to a throwaway temp file so it can be
+ * passed via `--append-system-prompt-file` instead of argv. Returns the path
+ * plus an idempotent, best-effort cleanup that removes the temp directory.
+ */
+function writeSystemPromptFile(content: string): { path: string; cleanup: () => void } {
+  const dir = mkdtempSync(join(tmpdir(), 'lark-claude-'));
+  const path = join(dir, 'append-system-prompt.md');
+  writeFileSync(path, content, 'utf8');
+  return {
+    path,
+    cleanup: () => {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // best-effort: the OS will reclaim the temp dir eventually
+      }
+    },
+  };
 }
 
 function isWindowsCommandNotFoundLine(line: string): boolean {

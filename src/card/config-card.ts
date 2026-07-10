@@ -1,14 +1,17 @@
+import { supportedModels } from '../agent/models';
 import type { KnownChat } from '../bot/lark-info';
-import type { LarkCliIdentityPreset } from '../config/profile-schema';
+import type { AgentKind, LarkCliIdentityPreset } from '../config/profile-schema';
 import type { CotMessagesMode, MessageReplyMode } from '../config/schema';
 import { activeLocale, msgs, type Locale } from '../i18n';
 
 export interface ConfigFormOpts {
+  /** Profile's agent kind — decides which model catalog the picker shows. */
+  agentKind: AgentKind;
+  /** Current model selection (a value from {@link supportedModels}). */
+  model: string;
   messageReply: MessageReplyMode;
   showToolCalls: boolean;
   cotMessages: CotMessagesMode;
-  /** Global default model (alias or full id). Undefined = CLI default. */
-  model?: string;
   /** Global default reasoning-effort. Undefined = CLI default. */
   effort?: string;
   maxConcurrentRuns: number;
@@ -144,6 +147,23 @@ export function configFormCard(opts: ConfigFormOpts): object {
             // },
             {
               tag: 'markdown',
+              content:
+                '**模型**\n' +
+                '_底层 agent 运行使用的模型_\n' +
+                '_「跟随默认」= 不指定,由 CLI/账号决定_',
+            },
+            {
+              tag: 'select_static',
+              name: 'model',
+              initial_option: opts.model,
+              options: supportedModels(opts.agentKind).map((opt) => ({
+                text: { tag: 'plain_text', content: opt.label },
+                value: opt.value,
+              })),
+            },
+            { tag: 'hr' },
+            {
+              tag: 'markdown',
               content: m.toolCallsHeading,
             },
             {
@@ -168,17 +188,6 @@ export function configFormCard(opts: ConfigFormOpts): object {
                 { text: { tag: 'plain_text', content: m.optCotBrief }, value: 'brief' },
                 { text: { tag: 'plain_text', content: m.optCotDetailed }, value: 'detailed' },
               ],
-            },
-            {
-              tag: 'markdown',
-              content: m.modelHeading,
-            },
-            {
-              tag: 'input',
-              name: 'model',
-              default_value: opts.model ?? '',
-              placeholder: { tag: 'plain_text', content: 'opus / sonnet / fable' },
-              input_type: 'text',
             },
             {
               tag: 'markdown',
@@ -341,6 +350,12 @@ export function configSavedCard(opts: ConfigFormOpts): object {
       ],
     },
   };
+}
+
+function cotMessagesLabel(value: CotMessagesMode): string {
+  if (value === 'brief') return '简略';
+  if (value === 'detailed') return '详细';
+  return '关闭';
 }
 
 /**

@@ -1,49 +1,116 @@
 import type { AgentEvent } from '../agent/types';
-import type { CotMessagesMode } from '../config/schema';
+import type { CotMessagesMode, TenantBrand } from '../config/schema';
 import { log } from '../core/logger';
-import { msgs } from '../i18n';
 import { toolHeaderText } from '../card/tool-render';
 import type { RunState } from '../card/run-state';
+
+const ENDPOINTS: Record<TenantBrand, string> = {
+  feishu: 'https://open.feishu.cn',
+  lark: 'https://open.larksuite.com',
+};
 
 const COT_UPDATE_THROTTLE_MS = 600;
 const COT_TOOL_OUTPUT_MAX = 1200;
 const COT_TEXT_MAX = 1200;
-
-/** Minimal authed-request surface from the channel SDK's lark Client. The SDK
- * already manages the tenant_access_token + domain and throws on non-zero Feishu
- * codes, so COT reuses it instead of minting its own token. */
-export interface CotRequester {
-  request(payload: { method: string; url: string; data?: unknown }): Promise<Record<string, unknown>>;
-}
+// Bounds every CoT HTTP call. Without it a hung message_cot endpoint pins
+// start() — which runs before any agent event is drained and before the
+// plain-reply fallback — to undici's ~300s default.
+const COT_REQUEST_TIMEOUT_MS = 15_000;
 
 export class CotClient {
-  constructor(private readonly raw: CotRequester) {}
+  private readonly baseUrl: string;
+  private readonly appId: string;
+  private readonly appSecret: string;
+  private token: string | undefined;
+  private tokenExpiresAt = 0;
 
-  async create(receiveId: string, originMessageId?: string): Promise<Record<string, unknown>> {
-    const resp = await this.raw.request({
+  constructor(opts: { tenant: TenantBrand; appId: string; appSecret: string }) {
+    this.baseUrl = ENDPOINTS[opts.tenant];
+    this.appId = opts.appId;
+    this.appSecret = opts.appSecret;
+  }
+
+  async tenantToken(): Promise<string> {
+    const now = Date.now();
+    if (this.token && this.tokenExpiresAt - now > 60_000) return this.token;
+    const resp = await fetch(`${this.baseUrl}/open-apis/auth/v3/tenant_access_token/internal`, {
       method: 'POST',
-      url: '/open-apis/im/v1/message_cot?receive_id_type=chat_id',
-      data: {
-        receive_id: receiveId,
-        ...(originMessageId ? { origin_message_id: originMessageId } : {}),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app_id: this.appId, app_secret: this.appSecret }),
+      signal: AbortSignal.timeout(COT_REQUEST_TIMEOUT_MS),
+    });
+    if (!resp.ok) throw new Error(`tenant token HTTP ${resp.status}`);
+    const data = await resp.json() as { code?: number; msg?: string; tenant_access_token?: string; expire?: number };
+    if (data.code !== 0 || !data.tenant_access_token) {
+      throw new Error(`tenant token failed: code=${data.code ?? '?'} msg=${data.msg ?? '<no msg>'}`);
+    }
+    this.token = data.tenant_access_token;
+    const expireSeconds = typeof data.expire === 'number' ? data.expire : 7200;
+    this.tokenExpiresAt = now + Math.max(60, expireSeconds - 60) * 1000;
+    return this.token;
+  }
+
+  async request(path: string, init: RequestInit = {}): Promise<Record<string, unknown>> {
+    const token = await this.tenantToken();
+    const resp = await fetch(`${this.baseUrl}${path}`, {
+      signal: AbortSignal.timeout(COT_REQUEST_TIMEOUT_MS),
+      ...init,
+      headers: {
+        'Content-Type': 'application/json;charset=utf-8',
+        Authorization: `Bearer ${token}`,
+        ...(init.headers ?? {}),
       },
     });
-    return (resp.data as Record<string, unknown> | undefined) ?? resp;
+    if (!resp.ok) throw new Error(`COT HTTP ${resp.status}`);
+    const text = await resp.text();
+    if (!text) return {};
+    const data = JSON.parse(text) as { code?: number; msg?: string; data?: Record<string, unknown> } & Record<string, unknown>;
+    if (data.code !== undefined && data.code !== 0) {
+      throw new Error(`COT API failed: code=${data.code} msg=${data.msg ?? '<no msg>'}`);
+    }
+    return data.data ?? data;
+  }
+
+  async create(chatId: string, originMessageId?: string): Promise<Record<string, unknown>> {
+    // message_cot only accepts receive_id_type=chat_id. thread_id is NOT a
+    // valid receive type for this endpoint (it exists only on the forward
+    // APIs) — addressing the create to an omt_* thread id is rejected with
+    // code=10002 "Bot/User can NOT be out of the chat" (the backend tries to
+    // resolve the omt_* id as a chat the bot belongs to and finds none).
+    //
+    // Placement inside a topic is instead governed by origin_message_id: the
+    // bubble inherits the topic of the message it originates from. Passing an
+    // in-topic message id keeps the bubble in the topic; the topic's root
+    // (首楼) message has no thread of its own, so a bubble originated from it
+    // lands at the group top level. Callers pick origin_message_id
+    // accordingly.
+    return this.request('/open-apis/im/v1/message_cot?receive_id_type=chat_id', {
+      method: 'POST',
+      body: JSON.stringify({
+        receive_id: chatId,
+        ...(originMessageId ? { origin_message_id: originMessageId } : {}),
+      }),
+    });
   }
 
   async update(ref: CotRef, events: readonly CotEvent[]): Promise<void> {
     if (events.length === 0) return;
-    await this.raw.request({
+    await this.request('/open-apis/im/v1/message_cot', {
       method: 'PUT',
-      url: '/open-apis/im/v1/message_cot',
-      data: { cot_id: ref.cotId, message_id: ref.messageId, events },
+      body: JSON.stringify({
+        cot_id: ref.cotId,
+        message_id: ref.messageId,
+        events,
+      }),
     });
   }
 
   async complete(ref: CotRef, reason: string): Promise<void> {
-    await this.raw.request({
+    const cotId = encodeURIComponent(ref.cotId);
+    const messageId = encodeURIComponent(ref.messageId);
+    await this.request(`/open-apis/im/v1/message_cot/complete/${cotId}?message_id=${messageId}&reason=${reason}`, {
       method: 'POST',
-      url: `/open-apis/im/v1/message_cot/complete/${encodeURIComponent(ref.cotId)}?message_id=${encodeURIComponent(ref.messageId)}&reason=${encodeURIComponent(reason)}`,
+      body: '',
     });
   }
 }
@@ -90,28 +157,40 @@ export class CotPublisher {
   }
 
   async start(): Promise<void> {
+    // Single chat_id-addressed create. In topics the bubble follows
+    // originMessageId's thread (see CotClient.create); the caller passes an
+    // in-topic origin so it lands in the topic. On any failure we disable CoT
+    // and let the caller fall back to a plain reply — never retry, since a
+    // create that failed after committing server-side would leave a duplicate
+    // bubble spinning forever.
+    let created: Record<string, unknown>;
     try {
-      const created = await this.client.create(this.chatId, this.originMessageId);
-      const cotId = stringValue(created.cot_id ?? created.cotId);
-      const messageId = stringValue(created.message_id ?? created.messageId);
-      if (!cotId || !messageId) {
-        throw new Error(`CreateCOT missing ids: ${JSON.stringify(created).slice(0, 200)}`);
-      }
-      this.ref = { cotId, messageId };
-      log.info('cot', 'created', { cotId, messageId });
-      this.enqueue('RUN_STARTED', {
-        threadId: this.scope,
-        runId: this.runId,
-        input: { query: this.inputPreview },
-      });
-      this.enqueue('STEP_STARTED', {
-        stepId: `step-understand-${this.runId}`,
-        stepName: msgs().bot.cotStepUnderstand,
-      });
+      created = await this.client.create(this.chatId, this.originMessageId);
     } catch (err) {
       this.disabled = true;
       log.warn('cot', 'create-failed', { err: err instanceof Error ? err.message : String(err) });
+      return;
     }
+    const cotId = stringValue(created.cot_id ?? created.cotId);
+    const messageId = stringValue(created.message_id ?? created.messageId);
+    if (!cotId || !messageId) {
+      this.disabled = true;
+      log.warn('cot', 'create-failed', {
+        err: `CreateCOT missing ids: ${JSON.stringify(created).slice(0, 200)}`,
+      });
+      return;
+    }
+    this.ref = { cotId, messageId };
+    log.info('cot', 'created', { cotId, messageId });
+    this.enqueue('RUN_STARTED', {
+      threadId: this.scope,
+      runId: this.runId,
+      input: { query: this.inputPreview },
+    });
+    this.enqueue('STEP_STARTED', {
+      stepId: `step-understand-${this.runId}`,
+      stepName: '理解用户问题',
+    });
   }
 
   enqueue(eventType: string, content: unknown): void {
@@ -130,24 +209,12 @@ export class CotPublisher {
       this.timer = undefined;
     }
     await this.flush();
-    if (!this.ref) return;
-    // Always attempt to close the bubble — even when updates degraded
-    // (`disabled`) — otherwise the 思考过程 message spins in Lark forever.
-    // One retry: complete is known to fail transiently (COT complete 10001).
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await this.client.complete(this.ref, reason);
-        log.info('cot', 'completed', { cotId: this.ref.cotId, reason });
-        return;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (attempt >= 2) {
-          log.warn('cot', 'complete-failed', { err: message });
-          return;
-        }
-        log.warn('cot', 'complete-retry', { err: message });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
+    if (this.disabled || !this.ref) return;
+    try {
+      await this.client.complete(this.ref, reason);
+      log.info('cot', 'completed', { cotId: this.ref.cotId, reason });
+    } catch (err) {
+      log.warn('cot', 'complete-failed', { err: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -197,13 +264,19 @@ export async function consumeCotEvents(
   opts: { detail: CotMessagesMode },
 ): Promise<void> {
   let reasoningOpen = false;
+  let textStepOpen = false;
+  let textMessageOpen = false;
+  let textMessageIndex = 0;
+  let textMessageId: string | undefined;
   const toolBrief = new Map<string, { name: string; input: unknown }>();
   const reasoningMessageId = `reasoning-${publisher.runId}`;
+  const finalStepId = `step-process-${publisher.runId}`;
 
   try {
     for await (const evt of events) {
       if (evt.type === 'system' || evt.type === 'usage') continue;
       if (evt.type === 'thinking') {
+        closeTextIfNeeded();
         if (!reasoningOpen) {
           reasoningOpen = true;
           publisher.enqueue('REASONING_START', { messageId: reasoningMessageId });
@@ -220,10 +293,11 @@ export async function consumeCotEvents(
       }
       if (evt.type === 'tool_use') {
         closeReasoningIfNeeded();
+        closeTextIfNeeded();
         const toolCallId = evt.id;
         const detailed = opts.detail === 'detailed';
         const showSummary = opts.detail === 'brief' || detailed;
-        const title = showSummary ? cotBriefToolTitle(evt.name, evt.input, 'running') : msgs().bot.cotToolRunning;
+        const title = showSummary ? cotBriefToolTitle(evt.name, evt.input, 'running') : '正在调用工具';
         toolBrief.set(toolCallId, { name: evt.name, input: evt.input });
         publisher.enqueue('TOOL_CALL_START', {
           toolCallId,
@@ -251,20 +325,40 @@ export async function consumeCotEvents(
             ? truncateCot(evt.output ?? '', COT_TOOL_OUTPUT_MAX)
             : brief
               ? cotBriefToolTitle(brief.name, brief.input, evt.isError ? 'error' : 'done')
-              : msgs().bot.cotToolDone,
+              : '工具调用已完成',
         });
         toolBrief.delete(evt.id);
         continue;
       }
       if (evt.type === 'text') {
-        // The agent's answer text is the VISIBLE final reply (sent from
-        // channel.ts), NOT COT content — the fold holds only thinking + tools,
-        // like common AI tools. So just close any open reasoning and skip.
         closeReasoningIfNeeded();
+        if (!textStepOpen) {
+          textStepOpen = true;
+          publisher.enqueue('STEP_STARTED', {
+            stepId: finalStepId,
+            stepName: '输出过程',
+          });
+        }
+        if (!textMessageOpen) {
+          textMessageOpen = true;
+          textMessageId = `text-${publisher.runId}-${++textMessageIndex}`;
+          publisher.enqueue('TEXT_MESSAGE_START', { messageId: textMessageId, role: 'assistant' });
+        }
+        publisher.enqueue('TEXT_MESSAGE_CONTENT', {
+          messageId: textMessageId,
+          delta: truncateCot(evt.delta, COT_TEXT_MAX),
+        });
         continue;
       }
       if (evt.type === 'done' || evt.type === 'error') {
         closeReasoningIfNeeded();
+        closeTextIfNeeded();
+        if (textStepOpen) {
+          publisher.enqueue('STEP_FINISHED', {
+            stepId: finalStepId,
+            stepName: '输出过程',
+          });
+        }
         if (evt.type === 'error') {
           publisher.enqueue('RUN_ERROR', { message: evt.message, code: evt.terminationReason ?? 'error' });
           await publisher.finish('error');
@@ -280,11 +374,9 @@ export async function consumeCotEvents(
         return;
       }
     }
-    // Reaching here means the stream ended WITHOUT a done/error event — i.e. the
-    // run was signal-killed (⏹ stop or idle-timeout). Those branches return, so
-    // a normal finish is 'done' there; here it's an abnormal end → 'error'.
     closeReasoningIfNeeded();
-    await publisher.finish('error');
+    closeTextIfNeeded();
+    await publisher.finish('done');
   } catch (err) {
     log.warn('cot', 'consume-failed', { err: err instanceof Error ? err.message : String(err) });
     await publisher.finish('error');
@@ -297,6 +389,12 @@ export async function consumeCotEvents(
     publisher.enqueue('REASONING_END', { messageId: reasoningMessageId });
   }
 
+  function closeTextIfNeeded(): void {
+    if (!textMessageOpen || !textMessageId) return;
+    publisher.enqueue('TEXT_MESSAGE_END', { messageId: textMessageId });
+    textMessageOpen = false;
+    textMessageId = undefined;
+  }
 }
 
 export function cotBriefToolTitle(
