@@ -24,11 +24,6 @@ export const botZh = {
   commentRejectedReconnecting: '当前 bot 正在重连，请稍后再试。',
   managedWorkspaceUnavailable: (detail: string) => `托管工作目录不可用：${detail}`,
 
-  // cot.ts
-  cotStepUnderstand: '理解用户问题',
-  cotToolRunning: '正在调用工具',
-  cotToolDone: '工具调用已完成',
-
   // run-flow.ts
   runRejectedReconnecting: '当前 bot 正在重连，稍后会继续处理新消息。',
   runRejectedActive: '当前会话已有运行在执行，请稍后再试或先停止当前运行。',
@@ -61,11 +56,6 @@ export const botEn: typeof botZh = {
   commentRejectedReconnecting: 'The bot is reconnecting. Please try again later.',
   managedWorkspaceUnavailable: (detail: string) =>
     `Managed working directory unavailable: ${detail}`,
-
-  // cot.ts
-  cotStepUnderstand: 'Understanding the question',
-  cotToolRunning: 'Calling a tool',
-  cotToolDone: 'Tool call completed',
 
   // run-flow.ts
   runRejectedReconnecting: 'The bot is reconnecting; new messages will be handled shortly.',
@@ -100,11 +90,6 @@ export const botJa: typeof botZh = {
   commentRejectedReconnecting: 'bot は再接続中です。しばらくしてからお試しください。',
   managedWorkspaceUnavailable: (detail: string) =>
     `マネージド作業ディレクトリを利用できません：${detail}`,
-
-  // cot.ts
-  cotStepUnderstand: '質問を理解しています',
-  cotToolRunning: 'ツールを呼び出しています',
-  cotToolDone: 'ツール呼び出しが完了しました',
 
   // run-flow.ts
   runRejectedReconnecting: 'bot は再接続中です。新しいメッセージは後ほど処理されます。',
