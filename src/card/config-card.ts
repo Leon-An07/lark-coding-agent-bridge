@@ -124,20 +124,24 @@ export function configFormCard(opts: ConfigFormOpts): object {
           tag: 'form',
           name: 'config_form',
           elements: [
-            {
-              tag: 'markdown',
-              content: m.messageReplyHeading,
-            },
-            {
-              tag: 'select_static',
-              name: 'message_reply',
-              initial_option: opts.messageReply,
-              options: [
-                { text: { tag: 'plain_text', content: m.optText }, value: 'text' },
-                { text: { tag: 'plain_text', content: m.optMarkdown }, value: 'markdown' },
-                { text: { tag: 'plain_text', content: m.optCard }, value: 'card' },
-              ],
-            },
+            // Hidden for now: the message-reply-mode selector is commented out
+            // so users can't switch away from the default. submitConfig()
+            // preserves the stored value when this field is absent, so hiding
+            // the UI here does not reset it. Re-add the block below to re-expose.
+            // {
+            //   tag: 'markdown',
+            //   content: m.messageReplyHeading,
+            // },
+            // {
+            //   tag: 'select_static',
+            //   name: 'message_reply',
+            //   initial_option: opts.messageReply,
+            //   options: [
+            //     { text: { tag: 'plain_text', content: m.optText }, value: 'text' },
+            //     { text: { tag: 'plain_text', content: m.optMarkdown }, value: 'markdown' },
+            //     { text: { tag: 'plain_text', content: m.optCard }, value: 'card' },
+            //   ],
+            // },
             {
               tag: 'markdown',
               content: m.toolCallsHeading,

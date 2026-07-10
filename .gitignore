@@ -20,3 +20,10 @@ tests-smoke/
 
 # Lark auth artifacts — contain live OAuth device codes
 lark-auth-qrcodes/
+
+# Local share/export scratch and packaged tarballs — not part of the repo
+bridge-share-attachments/
+bridge-share-*.xml
+bridge-share-*.md
+scheduled-tasks-report.md
+*.tgz

@@ -1873,11 +1873,15 @@ async function cancelConfig(ctx: CommandContext): Promise<void> {
 
 async function submitConfig(ctx: CommandContext): Promise<void> {
   const fv = ctx.formValue ?? {};
+  // The message-reply selector is currently hidden from the /config card, so
+  // `message_reply` is usually absent from the form. When absent (or invalid),
+  // preserve the currently stored mode instead of forcing a default — otherwise
+  // every submit would silently reset it.
   const rawReply = String(fv.message_reply ?? '').trim();
   const messageReply: MessageReplyMode =
     rawReply === 'markdown' || rawReply === 'text' || rawReply === 'card'
       ? (rawReply as MessageReplyMode)
-      : 'card';
+      : getMessageReplyMode(ctx.controls.cfg);
   const rawTools = String(fv.show_tool_calls ?? '').trim();
   const showToolCalls = rawTools !== 'hide';
   const rawCot = String(fv.cot_messages ?? '').trim();
