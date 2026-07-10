@@ -117,7 +117,7 @@ describe('markdown stream startup failures', () => {
     await waitFor(() => h.channel.rawClient.im.v1.messageReaction.delete.mock.calls.length > 0);
   });
 
-  it('logs stream failures that arrive after terminal grace expires', async () => {
+  it('resends the final result (and logs late failures) when the stream stalls past terminal grace', async () => {
     const streamFailure = deferred<void>();
     let streamProducerStarted = false;
     const h = await createHarness({
@@ -141,6 +141,16 @@ describe('markdown stream startup failures', () => {
       () => h.channel.rawClient.im.v1.messageReaction.delete.mock.calls.length > 0,
       4500,
     );
+
+    // The agent reached a terminal state but the live stream never confirmed it
+    // (stuck WS). The run must NOT vanish silently: its final result is resent
+    // as a fresh message so a completed long task always delivers something.
+    expect(
+      h.channel.sent.some((s) => {
+        const md = (s.content as { markdown?: string }).markdown;
+        return typeof md === 'string' && md.includes('agent 失败');
+      }),
+    ).toBe(true);
 
     await h.channel.handlers.message?.(message('om_second', 'second'));
     await waitFor(() => h.agent.runOptions.length === 2);

@@ -69,7 +69,7 @@ export const BRIDGE_SYSTEM_PROMPT = `# lark-channel-bridge 运行约定
 
 1. 生成完整 schema 2.0 Card JSON 文件。
 2. 需要回调进入 agent 的按钮 / 表单提交按钮，在 callback \`value\` 里放 \`"__bridge_cb": true\` 和业务字段。
-3. 调用 \`lark-channel-bridge send-card --chat-id <oc_xxx> --operator <ou_xxx|*> --file card.json\`。当前对话里 \`<oc_xxx>\` 用 \`bridge_context.chatId\`，默认 operator 用 \`bridge_context.senderId\`；群投票/任意人可点时才用 \`*\`。
+3. 调用 \`lark-channel-bridge send-card --chat-id <oc_xxx> --operator <ou_xxx|*> --file card.json\`。当前对话里 \`<oc_xxx>\` 用 \`bridge_context.chatId\`，默认 operator 用 \`bridge_context.senderId\`；群投票/任意人可点时才用 \`*\`。话题群里要发到对应话题时，加 \`--reply-to <thread_id>\`（\`thread_id\` 从 \`bridge_context.threadId\` 取）。
 4. 用户点击后你会收到 \`[card-click] {...}\`，里面是按钮 value 中的业务字段。
 
 不要输出旧的 \`\`\`lark-card\`\`\` fenced block。bridge 不再解析 agent 输出里的 \`lark-card\`，所有需要回调进入 agent 的交互卡片都走 \`send-card\`。
@@ -149,6 +149,7 @@ lark-channel-bridge send-card --chat-id <oc_xxx> --operator <ou_xxx|*> --file ca
 
 - \`--chat-id\` 是卡片所在聊天窗口的 \`oc_xxx\`；DM 也要传 p2p 的 \`oc_xxx\`，不是 \`ou_xxx\`。
 - \`--operator <ou_xxx>\` 限定只能此人点击；\`--operator '*'\` 表示第一个有效点击者。
+- \`--reply-to <message_id>\` 把卡片发到话题/线程里（话题群必填，否则卡片落在群广场）；\`message_id\` 是话题根消息的 id，从 \`bridge_context.threadId\` 取。
 
 **E. 纯导航卡片**（通知 + 打开链接，不需要回调、不需要锁定）——用 \`lark-cli im +messages-send\` 发 schema 2.0 卡，按钮用 \`open_url\` 行为：
 

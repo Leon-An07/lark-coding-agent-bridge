@@ -46,6 +46,8 @@ interface FakeLarkChannel {
   getAppInfo: ReturnType<typeof vi.fn>;
   listChats: ReturnType<typeof vi.fn>;
   fetchRawMessage: ReturnType<typeof vi.fn>;
+  /** Options passed to send()/stream() — lets tests assert reply threading. */
+  replyOptions: unknown[];
   on(handlers: MessageHandlerMap): void;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
@@ -115,6 +117,42 @@ describe('topic message quote handling', () => {
     expect(h.channel.fetchRawMessage).toHaveBeenCalledWith(
       'om_quote_target',
       expect.objectContaining({ cardContentType: 'user_card_content' }),
+    );
+  });
+
+  it('thread-scopes a regular-group thread reply and threads the reply back', async () => {
+    // Regression: a thread-style reply in a REGULAR group (chat_mode 'group')
+    // carries a thread_id. It must (1) thread the bot's reply back into that
+    // thread (replyInThread) and (2) treat the thread anchor (parentId ===
+    // rootId) as structure, not a quote — same as topic groups.
+    const h = await createHarness({
+      chatMode: 'group',
+      quotedMessages: {
+        om_group_thread_root: 'group thread root content',
+      },
+    });
+
+    await startTestBridge(h);
+
+    await h.channel.handlers.message?.(
+      message({
+        messageId: 'om_group_thread_msg',
+        rootId: 'om_group_thread_root',
+        parentId: 'om_group_thread_root',
+        threadId: 'omt_group_thread',
+        content: '@Bridge 看这条',
+      }),
+    );
+    await waitFor(() => h.agent.runOptions.length === 1);
+
+    const prompt = h.agent.runOptions[0]?.prompt ?? '';
+    expect(prompt).toContain('"threadId":"omt_group_thread"');
+    // Anchor filtered — no spurious self-quote of the thread root.
+    expect(prompt).not.toContain('<quoted_messages>');
+    expect(prompt).not.toContain('group thread root content');
+    // Reply threads back into the same thread.
+    expect(h.channel.replyOptions).toContainEqual(
+      expect.objectContaining({ replyInThread: true }),
     );
   });
 
@@ -232,8 +270,10 @@ function createFakeLarkChannel(options: {
   const quotedMessages = options.quotedMessages ?? {
     om_topic_root: 'topic root content',
   };
+  const replyOptions: unknown[] = [];
   return {
     handlers,
+    replyOptions,
     botIdentity: { openId: 'ou_bot', name: 'Bridge' },
     rawClient: {
       request: vi.fn(async () => ({ data: { items: [] } })),
@@ -272,8 +312,11 @@ function createFakeLarkChannel(options: {
     getConnectionStatus() {
       return { state: 'connected', reconnectAttempts: 0 };
     },
-    async send() {},
-    async stream(_chatId, input) {
+    async send(_chatId, _content, sendOptions) {
+      replyOptions.push(sendOptions);
+    },
+    async stream(_chatId, input, sendOptions) {
+      replyOptions.push(sendOptions);
       if (isMarkdownStreamInput(input)) {
         await input.markdown({ setContent: async () => {} });
       }

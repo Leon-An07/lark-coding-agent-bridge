@@ -138,9 +138,17 @@ function matchesExpected(
   // agent cards (e.g. a group poll) with it, so any authenticated clicker
   // passes. All other tokens stay bound to a specific operator.
   const operatorOk = payload.o === '*' || payload.o === expected.operatorOpenId;
+  // A bare `chatId` scope is a chat-wide token, the scope counterpart of `o === '*'`.
+  // Cards pushed proactively (cron notifications, entry cards, anything not sent
+  // from inside a run) cannot know the topic thread they will land in — Lark only
+  // assigns the `omt_` thread id after the message is sent. Such tokens bind to the
+  // chat, and the click stays bound by chatId, operator, action, nonce and expiry;
+  // the resulting run is routed into whatever thread the click actually came from.
+  // Cards that CAN name their thread sign `chatId:threadId` and stay thread-bound.
+  const scopeOk = payload.s === expected.scope || payload.s === expected.chatId;
   return (
     payload.r === expected.runId &&
-    payload.s === expected.scope &&
+    scopeOk &&
     payload.c === expected.chatId &&
     operatorOk &&
     payload.a === expected.action &&

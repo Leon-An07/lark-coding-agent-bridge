@@ -7,6 +7,10 @@ export interface ConfigFormOpts {
   messageReply: MessageReplyMode;
   showToolCalls: boolean;
   cotMessages: CotMessagesMode;
+  /** Global default model (alias or full id). Undefined = CLI default. */
+  model?: string;
+  /** Global default reasoning-effort. Undefined = CLI default. */
+  effort?: string;
   maxConcurrentRuns: number;
   /** 0 means "disabled". */
   runIdleTimeoutMinutes: number;
@@ -163,6 +167,34 @@ export function configFormCard(opts: ConfigFormOpts): object {
             },
             {
               tag: 'markdown',
+              content: m.modelHeading,
+            },
+            {
+              tag: 'input',
+              name: 'model',
+              default_value: opts.model ?? '',
+              placeholder: { tag: 'plain_text', content: 'opus / sonnet / fable' },
+              input_type: 'text',
+            },
+            {
+              tag: 'markdown',
+              content: m.effortHeading,
+            },
+            {
+              tag: 'select_static',
+              name: 'effort',
+              initial_option: opts.effort ?? 'default',
+              options: [
+                { text: { tag: 'plain_text', content: m.optEffortDefault }, value: 'default' },
+                { text: { tag: 'plain_text', content: 'low' }, value: 'low' },
+                { text: { tag: 'plain_text', content: 'medium' }, value: 'medium' },
+                { text: { tag: 'plain_text', content: 'high' }, value: 'high' },
+                { text: { tag: 'plain_text', content: 'xhigh' }, value: 'xhigh' },
+                { text: { tag: 'plain_text', content: 'max' }, value: 'max' },
+              ],
+            },
+            {
+              tag: 'markdown',
               content: m.concurrencyHeading,
             },
             {
@@ -290,6 +322,8 @@ export function configSavedCard(opts: ConfigFormOpts): object {
           content: m.configSavedBody({
             replyLabel,
             showToolCalls: opts.showToolCalls,
+            model: opts.model,
+            effort: opts.effort,
             maxConcurrentRuns: opts.maxConcurrentRuns,
             runIdleTimeoutMinutes: opts.runIdleTimeoutMinutes,
             requireMentionInGroup: opts.requireMentionInGroup,

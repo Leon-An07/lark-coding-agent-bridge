@@ -20,6 +20,15 @@ export interface CardCommandOptions {
   operator?: string;
   ttlMinutes?: string;
   file: string;
+  replyTo?: string;
+  /**
+   * Topic/thread ID (`omt_xxx`) the card lives in. In topic-mode chats the
+   * dispatcher computes the callback scope as `chatId:threadId`, so the token
+   * must be signed with the same scope or every click is denied with
+   * `context-mismatch`. NOTE: this is NOT the same as `replyTo` — that is a
+   * message ID (`om_xxx`) used to place the message in the thread.
+   */
+  threadId?: string;
 }
 
 export interface SendCardCommandOptions extends CardCommandOptions {
@@ -59,7 +68,8 @@ export async function runSendCard(opts: SendCardCommandOptions): Promise<void> {
     httpTimeoutMs: 30_000,
   });
 
-  const result = await channel.send(opts.chatId, { card: prepared.card });
+  const sendOpts = opts.replyTo ? { replyTo: opts.replyTo } : undefined;
+  const result = await channel.send(opts.chatId, { card: prepared.card }, sendOpts);
 
   // Record the card in the shared open-card store so the daemon can grey it
   // out if the user answers with a text reply instead of clicking. Only cards
@@ -68,7 +78,9 @@ export async function runSendCard(opts: SendCardCommandOptions): Promise<void> {
   if (prepared.signedCallbacks > 0 || prepared.alreadySignedCallbacks > 0) {
     try {
       configureOpenCardStore(`${runtime.appPaths.profileDir}/open-cards.json`);
-      setScopeOpenCard(opts.chatId, result.messageId, prepared.card);
+      // Must match the daemon's scope (chatId:threadId in topic chats), not the
+      // replyTo message id — otherwise the open-card store never greys the card.
+      setScopeOpenCard(callbackScope(opts), result.messageId, prepared.card);
       await flushOpenCardStore();
     } catch (err) {
       console.error(
@@ -97,10 +109,21 @@ async function prepareSignedCardWithRuntime(
   const signed = injectBridgeTokens(card, {
     auth,
     chatId: opts.chatId,
+    scope: callbackScope(opts),
     operatorOpenId: opts.operator ?? '*',
     ttlMs,
   });
   return signed;
+}
+
+/**
+ * Scope the callback token is bound to. It MUST equal the scope the dispatcher
+ * derives from the click event (`resolveScope`): `chatId:threadId` for
+ * topic-mode chats, bare `chatId` for p2p / ordinary groups. Signing with the
+ * bare chatId inside a topic chat makes every click fail `context-mismatch`.
+ */
+function callbackScope(opts: CardCommandOptions): string {
+  return opts.threadId ? `${opts.chatId}:${opts.threadId}` : opts.chatId;
 }
 
 function parseTtlMs(raw: string | undefined): number {

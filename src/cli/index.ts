@@ -156,6 +156,11 @@ program
   .requiredOption('--file <path>', 'Card JSON file to sign and send')
   .option('--operator <open_id>', 'who may click; use * for anyone (default)', '*')
   .option('--ttl-minutes <minutes>', 'callback token TTL in minutes (default 60)')
+  .option('--reply-to <message_id>', 'send as a reply in a thread / topic (message_id of the thread root)')
+  .option(
+    '--thread-id <thread_id>',
+    'topic/thread ID (omt_xxx) this card lives in. REQUIRED in topic-mode chats: the callback token scope must be chatId:threadId to match what the dispatcher computes on click, otherwise every click is denied with context-mismatch. Take it from bridge_context.threadId.',
+  )
   .option('--dry-run', 'print signed card JSON without sending')
   .option('-c, --config <path>', 'path to config file')
   .option('--profile <name>', 'profile name (defaults to active profile)')
@@ -164,6 +169,8 @@ program
     file: string;
     operator?: string;
     ttlMinutes?: string;
+    replyTo?: string;
+    threadId?: string;
     dryRun?: boolean;
     config?: string;
     profile?: string;

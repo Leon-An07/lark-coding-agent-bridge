@@ -37,6 +37,12 @@ export interface AgentRunOptions {
   sessionId?: string;
   threadId?: string;
   model?: string;
+  /**
+   * Reasoning-effort level for the run. The claude adapter maps this to
+   * `--effort` (low / medium / high / xhigh / max); adapters that don't
+   * support an effort flag (e.g. codex) ignore it.
+   */
+  effort?: string;
   images?: readonly string[];
   sandbox?: CodexSandboxMode;
   permissionMode?: ClaudePermissionMode;

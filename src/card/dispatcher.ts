@@ -267,15 +267,19 @@ async function resolveScope(
 ): Promise<{ scope: string; threadId: string | undefined; mode: 'p2p' | 'group' | 'topic' }> {
   const chatId = deps.evt.chatId;
   const mode = await deps.chatModeCache.resolve(deps.channel, chatId);
-  if (mode !== 'topic') {
+  if (mode === 'p2p') {
+    // Direct messages never thread.
     return { scope: chatId, threadId: undefined, mode };
   }
-  // Topic group — need the carrier message's thread_id to compose scope.
+  // Any group (topic OR regular) may carry a thread: the card's carrier
+  // message has a thread_id when it was posted into a thread. Look it up so
+  // the click lands on the same thread-scoped session as the messages — must
+  // match the intake scope rule (threadId → `${chatId}:${threadId}`).
   // One API call per click; could cache by messageId if it ever becomes hot.
   const threadId = await lookupMessageThreadId(deps.channel, deps.evt.messageId);
   if (!threadId) {
-    // Fall back to plain chatId. Better to land in the chat's "default"
-    // scope than fail the click silently.
+    // No thread → the group's shared chatId scope. Better to land in the
+    // chat's "default" scope than fail the click silently.
     return { scope: chatId, threadId: undefined, mode };
   }
   return { scope: `${chatId}:${threadId}`, threadId, mode };

@@ -35,6 +35,10 @@ export interface StartRunFlowInput {
   executor: RunExecutor;
   now: number;
   stopGraceMs?: number;
+  /** Global default model / reasoning-effort, resolved from preferences by
+   * the caller (where cfg is in scope). Claude-only; codex ignores them. */
+  model?: string;
+  effort?: string;
   observability?: {
     profile: string;
     agent: string;
@@ -144,6 +148,8 @@ export async function startRunFlow(input: StartRunFlowInput): Promise<StartRunFl
       policy,
       sessionId,
       threadId,
+      model: input.model,
+      effort: input.effort,
       images:
         input.capability.agentId === 'codex'
           ? policy.attachments

@@ -169,12 +169,13 @@ export function statusCard(info: StatusInfo): object {
   const sessionLine = info.sessionId
     ? `\`${info.sessionId}\`${info.sessionStale ? m.sessionStaleSuffix : ''}`
     : (info.emptySessionText ?? m.noSession);
-  // For topic groups, surface that the scope is per-topic so the user
-  // knows /cd / /new only affect this topic.
-  const scopeLine =
-    info.chatMode === 'topic'
-      ? m.topicScopeLine(escapeCode(info.scope))
-      : `\`${escapeCode(info.scope)}\``;
+  // For thread-scoped conversations (topic groups, or a thread reply in a
+  // regular group), surface that the scope is per-thread so the user knows
+  // /cd / /new only affect this thread. A `chatId:threadId` scope carries a
+  // ':' that a plain chatId never does.
+  const scopeLine = info.scope.includes(':')
+    ? m.topicScopeLine(escapeCode(info.scope))
+    : `\`${escapeCode(info.scope)}\``;
   const cwdLine = info.cwd ? `\`${escapeCode(info.cwd)}\`` : m.notSet;
   const queueLine = info.queue
     ? `${info.queue.active}/${info.queue.cap} active, ${info.queue.waiting} waiting`

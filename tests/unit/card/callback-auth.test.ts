@@ -58,6 +58,26 @@ describe('CallbackAuth', () => {
     ).toMatchObject({ ok: false });
   });
 
+  it('accepts a chat-wide token clicked inside a topic thread', async () => {
+    // Proactively-pushed cards cannot know their `omt_` thread id at sign time,
+    // so they sign the bare chatId. The click's expected scope is chatId:threadId.
+    const h = await harness();
+    const token = h.auth.sign({ ...baseSignInput(), scope: 'oc_1' });
+
+    expect(
+      h.auth.verify(token, { ...baseExpected(), scope: 'oc_1:omt_abc' }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('keeps a thread-bound token bound to its own thread', async () => {
+    const h = await harness();
+    const token = h.auth.sign({ ...baseSignInput(), scope: 'oc_1:omt_abc' });
+
+    expect(
+      h.auth.verify(token, { ...baseExpected(), scope: 'oc_1:omt_other' }),
+    ).toMatchObject({ ok: false });
+  });
+
   it('rejects expired tokens', async () => {
     const h = await harness({ now: 1000 });
     const token = h.auth.sign({ ...baseSignInput(), ttlMs: 10 });

@@ -61,6 +61,7 @@ describe('ClaudeAdapter process contract', () => {
     expect(record.argv[8]).not.toContain('__claude_cb');
     expect(record.argv).not.toContain('--resume');
     expect(record.argv).not.toContain('--model');
+    expect(record.argv).not.toContain('--effort');
   });
 
   it('injects the active bridge profile env into spawned runs', async () => {
@@ -121,6 +122,27 @@ describe('ClaudeAdapter process contract', () => {
 
     expect(record.argv.slice(-4)).toEqual(['--resume', 'sess-old', '--model', 'sonnet']);
     expect(record.argv[6]).toBe('bypassPermissions');
+  });
+
+  it('passes model and effort after the base CLI contract', async () => {
+    const fake = await createFakeClaude({
+      lines: [{ type: 'result', session_id: 'sess-me' }],
+    });
+    cleanup.push(fake.dir);
+
+    const run = new ClaudeAdapter({ binary: fake.path }).run({
+      runId: 'run-model-effort',
+      prompt: 'hi',
+      cwd: fake.dir,
+      model: 'opus',
+      effort: 'high',
+    });
+
+    await collect(run.events);
+    const record = await readRecord(fake.recordPath);
+
+    // --effort is appended right after --model.
+    expect(record.argv.slice(-4)).toEqual(['--model', 'opus', '--effort', 'high']);
   });
 
   it('includes stderr when the process exits non-zero', async () => {

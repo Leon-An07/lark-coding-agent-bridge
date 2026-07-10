@@ -37,15 +37,19 @@ import type {
   TenantBrand,
 } from '../config/schema';
 import {
+  AGENT_EFFORT_LEVELS,
   getAgentStopGraceMs,
   getCotMessages,
+  getEffort,
   getLanguage,
   getMaxConcurrentRuns,
   getMessageReplyMode,
+  getModel,
   getRequireMentionInGroup,
   getRunIdleTimeoutMs,
   getShowToolCalls,
   secretKeyForApp,
+  type AgentEffort,
 } from '../config/schema';
 import { msgs, normalizeLocale, setActiveLocale } from '../i18n';
 import type { ProfileAccess, ProfileConfig } from '../config/profile-schema';
@@ -1172,6 +1176,8 @@ async function handleDoctor(args: string, ctx: CommandContext): Promise<void> {
       scopeId: `${ctx.scope}:doctor`,
       policy,
       nowait: true,
+      model: getModel(ctx.controls.cfg),
+      effort: getEffort(ctx.controls.cfg),
       stopGraceMs: getAgentStopGraceMs(ctx.controls.cfg),
       observability: {
         profile: ctx.controls.profile,
@@ -1818,6 +1824,8 @@ async function showConfigForm(ctx: CommandContext): Promise<void> {
     messageReply: getMessageReplyMode(ctx.controls.cfg),
     showToolCalls: getShowToolCalls(ctx.controls.cfg),
     cotMessages: getCotMessages(ctx.controls.cfg),
+    model: getModel(ctx.controls.cfg),
+    effort: getEffort(ctx.controls.cfg),
     maxConcurrentRuns: getMaxConcurrentRuns(ctx.controls.cfg),
     runIdleTimeoutMinutes: ms ? Math.round(ms / 60_000) : 0,
     requireMentionInGroup: getRequireMentionInGroup(ctx.controls.cfg),
@@ -1875,6 +1883,14 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
   const rawCot = String(fv.cot_messages ?? '').trim();
   const cotMessages: CotMessagesMode =
     rawCot === 'brief' || rawCot === 'detailed' ? rawCot : 'off';
+  // Parse model (free text). Empty / 'default' clears it → CLI default.
+  const rawModel = String(fv.model ?? '').trim();
+  const model = rawModel === '' || rawModel === 'default' ? undefined : rawModel;
+  // Parse effort. Empty / unrecognized clears it → CLI default.
+  const rawEffort = String(fv.effort ?? '').trim() as AgentEffort;
+  const effort: AgentEffort | undefined = AGENT_EFFORT_LEVELS.includes(rawEffort)
+    ? rawEffort
+    : undefined;
   // Parse max_concurrent_runs; invalid input falls back to current value.
   const rawMaxCC = String(fv.max_concurrent_runs ?? '').trim();
   const parsedMaxCC = Number(rawMaxCC);
@@ -1943,6 +1959,8 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
       messageReplyMigrated: true,
       showToolCalls,
       cotMessages,
+      model,
+      effort,
       maxConcurrentRuns,
       runIdleTimeoutMinutes,
       requireMentionInGroup,
@@ -1992,6 +2010,8 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
     log.info('command', 'config-saved', {
       messageReply,
       showToolCalls,
+      model,
+      effort,
       maxConcurrentRuns,
       runIdleTimeoutMinutes,
       requireMentionInGroup,
@@ -2008,6 +2028,8 @@ async function submitConfig(ctx: CommandContext): Promise<void> {
       messageReply,
       showToolCalls,
       cotMessages,
+      model,
+      effort,
       maxConcurrentRuns,
       runIdleTimeoutMinutes,
       requireMentionInGroup,

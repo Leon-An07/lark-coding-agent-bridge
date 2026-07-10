@@ -124,6 +124,21 @@ export interface AppPreferences {
    */
   maxConcurrentRuns?: number;
   /**
+   * Global default model for agent runs. Passed to the claude CLI as
+   * `--model` (alias like 'opus' / 'sonnet' / 'fable', or a full model id like
+   * 'claude-opus-4-8'). Undefined / empty = don't pass `--model`, let the CLI
+   * use its own default (the pre-0.3 behavior). Only the claude adapter reads
+   * this; the codex adapter ignores it.
+   */
+  model?: string;
+  /**
+   * Global default reasoning-effort for agent runs. Passed to the claude CLI
+   * as `--effort` (one of low / medium / high / xhigh / max). Undefined /
+   * invalid = don't pass `--effort`, let the CLI decide. Only the claude
+   * adapter reads this; the codex adapter ignores it.
+   */
+  effort?: string;
+  /**
    * Global default idle-timeout for claude runs, in minutes. When set,
    * if claude emits no stream event for this long the bridge kills the
    * run as presumed-hung. Undefined / 0 = no timeout (the default — runs
@@ -238,6 +253,38 @@ export function getMaxConcurrentRuns(cfg: AppConfig): number {
   // Reasonable upper bound — at 50+ concurrent claudes the bot box is
   // probably already RAM-starved. Clamp to keep typos from killing the box.
   return Math.min(Math.floor(raw), 50);
+}
+
+/** Valid `--effort` levels accepted by the claude CLI. Source of truth for
+ * both the parser (`getEffort`) and the `/config` dropdown. */
+export const AGENT_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type AgentEffort = (typeof AGENT_EFFORT_LEVELS)[number];
+
+/**
+ * Resolve the global default model. Returns `undefined` when unset so the
+ * caller omits `--model` and the claude CLI falls back to its own default
+ * (the pre-0.3 behavior). Any non-empty string is passed through verbatim —
+ * the CLI accepts aliases ('opus' / 'sonnet' / 'fable') and full model ids,
+ * so we don't restrict the set here.
+ */
+export function getModel(cfg: AppConfig): string | undefined {
+  const raw = cfg.preferences?.model;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Resolve the global default reasoning-effort. Returns `undefined` when unset
+ * or invalid so the caller omits `--effort`. Validated against the CLI's known
+ * levels — an unknown value would just be ignored by the CLI, but rejecting it
+ * here keeps config.json / the `/config` card honest.
+ */
+export function getEffort(cfg: AppConfig): AgentEffort | undefined {
+  const raw = cfg.preferences?.effort;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim() as AgentEffort;
+  return AGENT_EFFORT_LEVELS.includes(trimmed) ? trimmed : undefined;
 }
 
 /**

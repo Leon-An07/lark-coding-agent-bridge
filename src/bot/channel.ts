@@ -34,8 +34,10 @@ import type { AppConfig } from '../config/schema';
 import {
   getAgentStopGraceMs,
   getCotMessages,
+  getEffort,
   getMaxConcurrentRuns,
   getMessageReplyMode,
+  getModel,
   getRequireMentionInGroup,
   getRunIdleTimeoutMs,
   getShowToolCalls,
@@ -62,7 +64,7 @@ import type { SessionCatalog } from '../session/catalog';
 import type { SessionStore } from '../session/store';
 import type { WorkspaceStore } from '../workspace/store';
 import { ActiveRuns, type RunHandle } from './active-runs';
-import { ChatModeCache, type ChatMode } from './chat-mode-cache';
+import { ChatModeCache } from './chat-mode-cache';
 import { handleCommentMention } from './comments';
 import { recordRunSessionEvent, startRunFlow } from './run-flow';
 import { commandSessionCatalogIdentity } from './session-catalog-identity';
@@ -281,7 +283,6 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     void withTrace({ chatId: firstMsg.chatId }, async () => {
       log.info('flush', 'start', { scope, batchSize: batch.length });
       try {
-        const mode = await chatModeCache.resolve(channel, firstMsg.chatId);
         await runAgentBatch({
           channel,
           executor,
@@ -296,7 +297,6 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
           activePolicyFingerprints,
           ctxNotices,
           scope,
-          mode,
         });
       } catch (err) {
         log.fail('flush', err);
@@ -556,13 +556,22 @@ async function intakeMessage(deps: IntakeDeps): Promise<void> {
   // Resolve scope (and underlying chat mode) once at intake — every
   // downstream consumer keys off these.
   const chatMode = await chatModeCache.resolve(channel, msg.chatId);
-  const scope = chatMode === 'topic' && msg.threadId
-    ? `${msg.chatId}:${msg.threadId}`
-    : msg.chatId;
+  // Thread-scoping is uniform: any message with a threadId gets its own scope,
+  // regardless of chat mode. Topic groups always thread; regular groups thread
+  // only on thread-style replies (Feishu sends thread_id even for chat_mode
+  // 'group'). Plain / quote-only messages stay on the shared chatId scope.
+  const scope = msg.threadId ? `${msg.chatId}:${msg.threadId}` : msg.chatId;
   log.info('intake', 'enter', {
     scope,
     chatType: msg.chatType,
     chatMode,
+    // Diagnostic: raw thread anchors as Feishu sends them, independent of the
+    // scope gate above. Lets us confirm whether regular groups (chatMode
+    // 'group') carry a thread_id on thread-style replies — the prerequisite
+    // for per-thread parallel sessions outside topic groups.
+    threadId: msg.threadId,
+    rootId: msg.rootId,
+    replyToMessageId: msg.replyToMessageId,
     sender: msg.senderId,
     preview,
     resources: msg.resources.length,
@@ -674,7 +683,6 @@ interface RunBatchDeps {
   activePolicyFingerprints: Map<string, string>;
   ctxNotices: ContextNoticeTracker;
   scope: string;
-  mode: ChatMode;
 }
 
 async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
@@ -692,7 +700,6 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     activePolicyFingerprints,
     ctxNotices,
     scope,
-    mode,
   } = deps;
   if (batch.length === 0) return;
   const firstMsg = batch[0];
@@ -743,7 +750,7 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const quoteTargets = [
     ...new Set(
       batch
-        .map((m) => replyQuoteTargetForMessage(m, mode))
+        .map((m) => replyQuoteTargetForMessage(m))
         .filter((id): id is string => Boolean(id) && !batchIds.has(id!)),
     ),
   ];
@@ -763,12 +770,13 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
   const prompt = buildPrompt(batch, attachments, quotes, channel.botIdentity);
   log.info('prompt', 'built', { promptChars: prompt.length, quotes: quotes.length });
 
-  // For topic groups: thread the reply so it lands in the same topic as the
-  // user's message. Otherwise the SDK posts at top level and the user's
-  // topic discussion breaks visually.
+  // Whenever the triggering message is in a thread (topic group, or a
+  // thread-style reply in a regular group), thread the reply back into that
+  // same thread. Otherwise the SDK posts at top level and the bot's answer
+  // lands in the group's main line instead of the thread the user is in.
   const sendOpts = {
     replyTo: lastMsg.messageId,
-    ...(mode === 'topic' && threadId ? { replyInThread: true } : {}),
+    ...(threadId ? { replyInThread: true } : {}),
   };
 
   const accessDecision =
@@ -799,6 +807,8 @@ async function runAgentBatch(deps: RunBatchDeps): Promise<void> {
     executor,
     now: Date.now(),
     stopGraceMs: getAgentStopGraceMs(controls.cfg),
+    model: getModel(controls.cfg),
+    effort: getEffort(controls.cfg),
     observability: {
       profile: controls.profile,
       agent: capability.agentId,
@@ -1281,10 +1291,19 @@ async function awaitRenderAwareStream(input: {
     delay(STREAM_TERMINAL_GRACE_MS).then(() => undefined),
   ]);
   if (!terminal) {
+    // The agent reached a terminal state, but the live stream never confirmed
+    // it within the grace window — almost always a stuck/reconnecting WS (see
+    // keepalive:ws-stuck / ws:reconnecting). The streamed card is frozen at
+    // whatever last landed. Returning silently here is exactly the "long task
+    // stops updating with no notice" symptom: the run finished but the user
+    // only sees a hung bubble. Resend the final state as a fresh message so a
+    // completed run always delivers its result, even when the live card is
+    // stuck. `first.state` is the terminal RunState (render won the race above).
     log.warn('stream', 'terminal-grace-expired', {
       mode: input.mode,
       graceMs: STREAM_TERMINAL_GRACE_MS,
     });
+    await runFallbackReply(input.mode, first.state, input.fallback);
     void streamResult.then((result) => {
       if (!result.ok) {
         log.fail('stream', result.err, { mode: input.mode, step: 'stream-terminal-late' });
@@ -1445,14 +1464,15 @@ function mergeMentions(batch: NormalizedMessage[]): BridgePromptMention[] {
 
 function replyQuoteTargetForMessage(
   msg: NormalizedMessage,
-  mode: ChatMode,
 ): string | undefined {
   const replyTo = msg.replyToMessageId;
   if (!replyTo) return undefined;
 
-  // Feishu topic messages use root_id/parent_id as the topic root anchor even
-  // for ordinary in-topic messages. Treat that as structure, not a quote.
-  if (mode === 'topic' && msg.threadId && msg.rootId && replyTo === msg.rootId) {
+  // Threaded messages (topic groups AND regular-group thread replies) point
+  // root_id/parent_id at the thread's anchor message even for ordinary
+  // in-thread posts. Treat that anchor as structure, not a quote — otherwise
+  // every thread message would spuriously quote its own root.
+  if (msg.threadId && msg.rootId && replyTo === msg.rootId) {
     return undefined;
   }
   return replyTo;

@@ -70,6 +70,15 @@ export const cardsZh = {
   optCotOff: '关闭(默认)',
   optCotBrief: '精简',
   optCotDetailed: '详细',
+  modelHeading:
+    '\n**默认模型**\n' +
+    '_全局默认模型,传给 claude 的 `--model`_\n' +
+    '_填别名(opus / sonnet / fable)或完整模型名;留空 = 用 CLI 默认_',
+  effortHeading:
+    '\n**推理强度(effort)**\n' +
+    '_全局默认推理强度,传给 claude 的 `--effort`_\n' +
+    '_默认 = 用 CLI 默认,不强制_',
+  optEffortDefault: '默认(CLI)',
   concurrencyHeading:
     '\n**并发上限**\n' +
     '_全局同时运行的 agent 进程数(主要影响话题群多话题并行场景)_\n' +
@@ -105,6 +114,8 @@ export const cardsZh = {
   configSavedBody: (p: {
     replyLabel: string;
     showToolCalls: boolean;
+    model?: string;
+    effort?: string;
     maxConcurrentRuns: number;
     runIdleTimeoutMinutes: number;
     requireMentionInGroup: boolean;
@@ -117,6 +128,8 @@ export const cardsZh = {
     '✅ **偏好已保存**\n\n' +
     `**消息回复方式**:${p.replyLabel}\n` +
     `**工具调用显示**:\`${p.showToolCalls ? 'show' : 'hide'}\`\n` +
+    `**默认模型**:\`${p.model ?? '默认'}\`\n` +
+    `**推理强度**:\`${p.effort ?? '默认'}\`\n` +
     `**并发上限**:\`${p.maxConcurrentRuns}\`\n` +
     `**run 探活**:\`${p.runIdleTimeoutMinutes > 0 ? `${p.runIdleTimeoutMinutes} 分钟` : '关闭'}\`\n` +
     `**群里需要 @bot（全局默认）**:\`${p.requireMentionInGroup ? '是' : '专属群免 @'}\`\n` +
@@ -338,6 +351,15 @@ export const cardsEn: typeof cardsZh = {
   optCotOff: 'Off (default)',
   optCotBrief: 'Brief',
   optCotDetailed: 'Detailed',
+  modelHeading:
+    '\n**Default model**\n' +
+    '_Global default model, passed to claude as `--model`_\n' +
+    '_Use an alias (opus / sonnet / fable) or a full model id; leave empty = CLI default_',
+  effortHeading:
+    '\n**Reasoning effort**\n' +
+    '_Global default reasoning effort, passed to claude as `--effort`_\n' +
+    '_Default = let the CLI decide, nothing forced_',
+  optEffortDefault: 'Default (CLI)',
   concurrencyHeading:
     '\n**Concurrency limit**\n' +
     '_Global cap on agent processes running at once (mainly affects parallel topics in topic groups)_\n' +
@@ -373,6 +395,8 @@ export const cardsEn: typeof cardsZh = {
   configSavedBody: (p: {
     replyLabel: string;
     showToolCalls: boolean;
+    model?: string;
+    effort?: string;
     maxConcurrentRuns: number;
     runIdleTimeoutMinutes: number;
     requireMentionInGroup: boolean;
@@ -385,6 +409,8 @@ export const cardsEn: typeof cardsZh = {
     '✅ **Preferences saved**\n\n' +
     `**Reply style**: ${p.replyLabel}\n` +
     `**Tool call display**: \`${p.showToolCalls ? 'show' : 'hide'}\`\n` +
+    `**Default model**: \`${p.model ?? 'default'}\`\n` +
+    `**Reasoning effort**: \`${p.effort ?? 'default'}\`\n` +
     `**Concurrency limit**: \`${p.maxConcurrentRuns}\`\n` +
     `**Run keepalive**: \`${p.runIdleTimeoutMinutes > 0 ? `${p.runIdleTimeoutMinutes} min` : 'off'}\`\n` +
     `**Require @bot in groups (global default)**: \`${p.requireMentionInGroup ? 'yes' : 'mention-free dedicated group'}\`\n` +
@@ -606,6 +632,15 @@ export const cardsJa: typeof cardsZh = {
   optCotOff: 'オフ(デフォルト)',
   optCotBrief: '簡易',
   optCotDetailed: '詳細',
+  modelHeading:
+    '\n**デフォルトモデル**\n' +
+    '_全体のデフォルトモデル。claude の `--model` に渡されます_\n' +
+    '_エイリアス(opus / sonnet / fable)またはフルモデル名を入力。空欄 = CLI のデフォルト_',
+  effortHeading:
+    '\n**推論の強度(effort)**\n' +
+    '_全体のデフォルト推論強度。claude の `--effort` に渡されます_\n' +
+    '_デフォルト = CLI に任せ、強制しません_',
+  optEffortDefault: 'デフォルト(CLI)',
   concurrencyHeading:
     '\n**同時実行の上限**\n' +
     '_全体で同時に実行する agent プロセス数(主にトピックグループでの複数トピック並行実行に影響)_\n' +
@@ -641,6 +676,8 @@ export const cardsJa: typeof cardsZh = {
   configSavedBody: (p: {
     replyLabel: string;
     showToolCalls: boolean;
+    model?: string;
+    effort?: string;
     maxConcurrentRuns: number;
     runIdleTimeoutMinutes: number;
     requireMentionInGroup: boolean;
@@ -653,6 +690,8 @@ export const cardsJa: typeof cardsZh = {
     '✅ **設定を保存しました**\n\n' +
     `**メッセージ返信方式**:${p.replyLabel}\n` +
     `**ツール呼び出しの表示**:\`${p.showToolCalls ? 'show' : 'hide'}\`\n` +
+    `**デフォルトモデル**:\`${p.model ?? 'デフォルト'}\`\n` +
+    `**推論の強度**:\`${p.effort ?? 'デフォルト'}\`\n` +
     `**同時実行の上限**:\`${p.maxConcurrentRuns}\`\n` +
     `**run キープアライブ**:\`${p.runIdleTimeoutMinutes > 0 ? `${p.runIdleTimeoutMinutes} 分` : 'オフ'}\`\n` +
     `**グループで @bot を必須にする（グローバル既定）**:\`${p.requireMentionInGroup ? 'はい' : '専用グループで @ 不要'}\`\n` +
