@@ -1319,7 +1319,7 @@ async function sendCotDegradedNotice(input: {
   try {
     await input.channel.send(
       input.chatId,
-      { markdown: 'COT 过程消息更新失败，已停止展示过程；最终答案仍会继续发送。' },
+      { markdown: msgs().bot.cotDegradedNotice },
       input.sendOpts,
     );
   } catch (err) {

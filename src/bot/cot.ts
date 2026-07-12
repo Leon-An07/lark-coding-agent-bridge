@@ -1,5 +1,6 @@
 import type { AgentEvent } from '../agent/types';
 import type { CotMessagesMode, TenantBrand } from '../config/schema';
+import { msgs } from '../i18n';
 import { log } from '../core/logger';
 import { toolHeaderText } from '../card/tool-render';
 import type { RunState } from '../card/run-state';
@@ -189,7 +190,7 @@ export class CotPublisher {
     });
     this.enqueue('STEP_STARTED', {
       stepId: `step-understand-${this.runId}`,
-      stepName: '理解用户问题',
+      stepName: msgs().bot.cotStepUnderstand,
     });
   }
 
@@ -297,7 +298,7 @@ export async function consumeCotEvents(
         const toolCallId = evt.id;
         const detailed = opts.detail === 'detailed';
         const showSummary = opts.detail === 'brief' || detailed;
-        const title = showSummary ? cotBriefToolTitle(evt.name, evt.input, 'running') : '正在调用工具';
+        const title = showSummary ? cotBriefToolTitle(evt.name, evt.input, 'running') : msgs().bot.cotToolRunning;
         toolBrief.set(toolCallId, { name: evt.name, input: evt.input });
         publisher.enqueue('TOOL_CALL_START', {
           toolCallId,
@@ -325,7 +326,7 @@ export async function consumeCotEvents(
             ? truncateCot(evt.output ?? '', COT_TOOL_OUTPUT_MAX)
             : brief
               ? cotBriefToolTitle(brief.name, brief.input, evt.isError ? 'error' : 'done')
-              : '工具调用已完成',
+              : msgs().bot.cotToolDone,
         });
         toolBrief.delete(evt.id);
         continue;
@@ -336,7 +337,7 @@ export async function consumeCotEvents(
           textStepOpen = true;
           publisher.enqueue('STEP_STARTED', {
             stepId: finalStepId,
-            stepName: '输出过程',
+            stepName: msgs().bot.cotStepProcess,
           });
         }
         if (!textMessageOpen) {
@@ -356,7 +357,7 @@ export async function consumeCotEvents(
         if (textStepOpen) {
           publisher.enqueue('STEP_FINISHED', {
             stepId: finalStepId,
-            stepName: '输出过程',
+            stepName: msgs().bot.cotStepProcess,
           });
         }
         if (evt.type === 'error') {

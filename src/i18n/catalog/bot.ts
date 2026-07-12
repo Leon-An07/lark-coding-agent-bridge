@@ -14,6 +14,13 @@ export const botZh = {
     'Bot owner/管理员可在本群发 /invite group 加入白名单。',
   streamInterrupted: '⚠️ 这条消息处理中断了(内部错误),请重发一次;反复出现可用 /doctor 排查。',
 
+  // cot.ts (思维链气泡里的步骤名/工具占位文案)
+  cotStepUnderstand: '理解用户问题',
+  cotStepProcess: '输出过程',
+  cotToolRunning: '正在调用工具',
+  cotToolDone: '工具调用已完成',
+  cotDegradedNotice: 'COT 过程消息更新失败，已停止展示过程；最终答案仍会继续发送。',
+
   // comments.ts
   commentWorkspaceUnavailable: (detail: string) => `工作目录不可用：${detail}`,
   commentTimedOut: '本次评论任务已超时，请重新 @ 我。',
@@ -45,6 +52,14 @@ export const botEn: typeof botZh = {
     'The bot owner/admin can send /invite group here to add it to the allowlist.',
   streamInterrupted:
     '⚠️ This message was interrupted (internal error). Please resend it; if it keeps happening, run /doctor.',
+
+  // cot.ts (step names / tool placeholders inside the chain-of-thought bubble)
+  cotStepUnderstand: 'Understanding the question',
+  cotStepProcess: 'Generating response',
+  cotToolRunning: 'Calling a tool',
+  cotToolDone: 'Tool call completed',
+  cotDegradedNotice:
+    'Failed to update the chain-of-thought progress, so it will no longer be shown; the final answer will still be sent.',
 
   // comments.ts
   commentWorkspaceUnavailable: (detail: string) => `Working directory unavailable: ${detail}`,
@@ -79,6 +94,14 @@ export const botJa: typeof botZh = {
     'Bot owner/管理者はこのグループで /invite group を送ると許可リストに追加できます。',
   streamInterrupted:
     '⚠️ このメッセージの処理が中断されました（内部エラー）。もう一度送信してください。繰り返し発生する場合は /doctor で確認できます。',
+
+  // cot.ts (思考プロセスのバブル内のステップ名／ツールのプレースホルダー)
+  cotStepUnderstand: '質問を理解しています',
+  cotStepProcess: '応答を生成しています',
+  cotToolRunning: 'ツールを呼び出しています',
+  cotToolDone: 'ツール呼び出しが完了しました',
+  cotDegradedNotice:
+    '思考プロセスの更新に失敗したため、プロセスの表示を停止しました。最終的な回答は引き続き送信されます。',
 
   // comments.ts
   commentWorkspaceUnavailable: (detail: string) => `作業ディレクトリを利用できません：${detail}`,
