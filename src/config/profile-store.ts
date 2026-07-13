@@ -59,6 +59,7 @@ type StoredProfileConfig = Pick<
   | 'attachments'
   | 'comments'
   | 'larkCli'
+  | 'cardScriptRoutes'
 >;
 
 type StoredRootConfig = Omit<RootConfig, 'preferences' | 'profiles'> & {
@@ -96,6 +97,9 @@ function serializeProfileConfig(profile: ProfileConfig): StoredProfileConfig {
     attachments: profile.attachments,
     comments: {},
     larkCli: profile.larkCli,
+    ...(profile.cardScriptRoutes && profile.cardScriptRoutes.length > 0
+      ? { cardScriptRoutes: profile.cardScriptRoutes }
+      : {}),
   };
 }
 

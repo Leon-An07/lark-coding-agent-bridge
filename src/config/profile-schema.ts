@@ -75,6 +75,22 @@ export interface LarkCliConfig {
   };
 }
 
+/**
+ * Deterministic card-action fast lane: a click whose signed value matches
+ * `source` (and `actions`, when given) is handed to a local executable
+ * instead of waking an agent session. For zero-judgment button flows
+ * (enroll, kickoff, acknowledge) this turns minutes into seconds; anything
+ * unmatched falls through to the normal agent callback path.
+ */
+export interface CardScriptRoute {
+  /** matches the callback value's `source` field */
+  source: string;
+  /** optional allowlist of `action` values; omitted/empty = every action under this source */
+  actions?: string[];
+  /** absolute path of the executable; receives one JSON argument (event envelope) */
+  exec: string;
+}
+
 export interface ProfileConfig {
   schemaVersion: 2;
   agentKind: AgentKind;
@@ -94,6 +110,7 @@ export interface ProfileConfig {
   attachments: AttachmentConfig;
   comments: CommentConfig;
   larkCli: LarkCliConfig;
+  cardScriptRoutes?: CardScriptRoute[];
 }
 
 export interface RootConfig {
@@ -154,6 +171,7 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
     attachments?: Partial<AttachmentConfig>;
     comments?: unknown;
     larkCli?: unknown;
+    cardScriptRoutes?: unknown;
   };
 
   if (raw.schemaVersion !== 2) {
@@ -180,12 +198,14 @@ export function normalizeProfileConfig(input: unknown): ProfileConfig {
   const workspaces = normalizeWorkspaces(raw.workspaces);
   const comments = normalizeComments(raw.comments);
   const larkCli = normalizeLarkCli(raw.larkCli);
+  const cardScriptRoutes = normalizeCardScriptRoutes(raw.cardScriptRoutes);
 
   return {
     schemaVersion: 2,
     agentKind: raw.agentKind,
     accounts,
     ...(raw.secrets ? { secrets: raw.secrets } : {}),
+    ...(cardScriptRoutes.length > 0 ? { cardScriptRoutes } : {}),
     preferences,
     access,
     workspaces,
@@ -289,6 +309,26 @@ function normalizeCodex(input: CodexConfig & { flags?: unknown }): CodexConfig {
 
 function normalizeComments(_input: unknown): CommentConfig {
   return {};
+}
+
+function normalizeCardScriptRoutes(input: unknown): CardScriptRoute[] {
+  if (!Array.isArray(input)) return [];
+  const out: CardScriptRoute[] = [];
+  for (const entry of input) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const raw = entry as { source?: unknown; actions?: unknown; exec?: unknown };
+    if (typeof raw.source !== 'string' || raw.source.length === 0) continue;
+    if (typeof raw.exec !== 'string' || raw.exec.length === 0) continue;
+    const actions = Array.isArray(raw.actions)
+      ? raw.actions.filter((a): a is string => typeof a === 'string' && a.length > 0)
+      : undefined;
+    out.push({
+      source: raw.source,
+      exec: raw.exec,
+      ...(actions && actions.length > 0 ? { actions } : {}),
+    });
+  }
+  return out;
 }
 
 function normalizeLarkCli(input: unknown): LarkCliConfig {

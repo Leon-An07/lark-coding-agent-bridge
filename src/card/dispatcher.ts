@@ -24,6 +24,8 @@ import type { SessionStore } from '../session/store';
 import type { WorkspaceStore } from '../workspace/store';
 import { commandSessionCatalogIdentity } from '../bot/session-catalog-identity';
 import { lookupMessageThreadId } from '../bot/thread-id';
+import { spawn } from 'node:child_process';
+import type { CardScriptRoute } from '../config/profile-schema';
 
 /** Marker key on a button's value object that flags the cardAction as
  * a callback that should be forwarded back to the agent instead
@@ -180,6 +182,18 @@ export async function handleCardAction(deps: CardDispatchDeps): Promise<void> {
         return;
       }
     }
+    // Deterministic fast lane: a configured cardScriptRoute takes the click
+    // straight to a local executable — token already verified above, so
+    // operator binding / nonce / expiry still hold. No agent session is
+    // created; the script owns all follow-up sends (as this bot, via CLI).
+    const scriptRoute = matchCardScriptRoute(deps.controls.profileConfig, payload);
+    if (scriptRoute) {
+      takeScopeOpenCard(scope);
+      scheduleAgentCardLock(deps, payload, formValue);
+      spawnCardScript(scriptRoute, deps, payload, formValue, scope, threadId);
+      return;
+    }
+
     // First valid click wins: lock the card into a "done" state (green header,
     // showing the choice, no buttons). Scheduled DETACHED + delayed (not awaited)
     // — Lark keeps the form locked while this handler is pending and snaps the
@@ -412,4 +426,66 @@ function makeFakeMsg(
     mentionedBot: false,
     createTime: Date.now(),
   };
+}
+
+/** Pick the first configured fast-lane route matching this callback value. */
+function matchCardScriptRoute(
+  profileConfig: Controls['profileConfig'],
+  payload: Record<string, unknown>,
+): CardScriptRoute | undefined {
+  const routes = (profileConfig as { cardScriptRoutes?: CardScriptRoute[] }).cardScriptRoutes;
+  if (!Array.isArray(routes) || routes.length === 0) return undefined;
+  const source = typeof payload.source === 'string' ? payload.source : '';
+  if (!source) return undefined;
+  const action = typeof payload.action === 'string' ? payload.action : '';
+  return routes.find(
+    (r) =>
+      r.source === source &&
+      (!r.actions || r.actions.length === 0 || r.actions.includes(action)),
+  );
+}
+
+/**
+ * Hand the verified click to the route's executable, detached — the handler
+ * returns immediately so Lark's own card UI settles, and the script does its
+ * work (Base writes, follow-up cards) on its own clock. The envelope mirrors
+ * the raw card.action.trigger shape so the same script can also serve an
+ * event-bus consumer unchanged.
+ */
+function spawnCardScript(
+  route: CardScriptRoute,
+  deps: CardDispatchDeps,
+  payload: Record<string, unknown>,
+  formValue: Record<string, unknown> | undefined,
+  scope: string,
+  threadId: string | undefined,
+): void {
+  const envelope = JSON.stringify({
+    event: {
+      action: { value: payload, ...(formValue ? { form_value: formValue } : {}) },
+      operator: {
+        open_id: deps.evt.operator.openId,
+        ...(deps.evt.operator.userId ? { user_id: deps.evt.operator.userId } : {}),
+        ...(deps.evt.operator.name ? { name: deps.evt.operator.name } : {}),
+      },
+      context: {
+        open_chat_id: deps.evt.chatId,
+        open_message_id: deps.evt.messageId,
+      },
+      scope,
+      ...(threadId ? { thread_id: threadId } : {}),
+    },
+  });
+  try {
+    const child = spawn(route.exec, [envelope], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] });
+    child.on('error', (err) => log.fail('cardAction', err, { exec: route.exec }));
+    child.unref();
+    log.info('cardAction', 'script-route', {
+      source: String(payload.source ?? ''),
+      action: String(payload.action ?? ''),
+      exec: route.exec,
+    });
+  } catch (err) {
+    log.fail('cardAction', err, { exec: route.exec });
+  }
 }
