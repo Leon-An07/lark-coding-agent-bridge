@@ -1,5 +1,5 @@
 diff --git a/dist/index.mjs b/dist/index.mjs
-index d2ad3a99f4966c78774cb4d8c0ec1076d95890e5..538caaa8b3db877779035c332237cfe5656420cc 100644
+index d2ad3a99f4966c78774cb4d8c0ec1076d95890e5..a8ff5158fcdc547634ff8748888b0ff32cdf1628 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
 @@ -2128,6 +2128,14 @@ const ERROR_FOOTER = "\n\n— _(Generation interrupted)_";
@@ -17,7 +17,7 @@ index d2ad3a99f4966c78774cb4d8c0ec1076d95890e5..538caaa8b3db877779035c332237cfe5
  * Shorten a markdown content string into a single-line preview suitable for
  * the card's `summary.content` — shown in chat lists / message previews.
  */
-@@ -2209,6 +2217,23 @@ var MarkdownStreamControllerImpl = class {
+@@ -2209,6 +2217,32 @@ var MarkdownStreamControllerImpl = class {
  	/** messageIds of every rollover card created after the head. */
  	rolloverMessageIds = [];
  	maxChars;
@@ -38,10 +38,19 @@ index d2ad3a99f4966c78774cb4d8c0ec1076d95890e5..538caaa8b3db877779035c332237cfe5
 +	/** True after an age-based finalize until the continuation card is created (lazily, on next content). */
 +	pendingNewCard = false;
 +	maxAgeMs;
++	/**
++	* Wall-clock timer driving the age rollover. The age check inside
++	* pushSnapshot only runs when content arrives, but a long tool call can stay
++	* silent for longer than maxAgeMs — the card then sails past Feishu's ~10min
++	* force-close with nobody checking, and every later update is silently
++	* dropped (the SDK never sees an error). Re-armed on each new card, cleared
++	* on finalize and terminal cleanup.
++	*/
++	rolloverTimer = void 0;
  	constructor(sender, to, idType, opts) {
  		this.sender = sender;
  		this.to = to;
-@@ -2220,6 +2245,7 @@ var MarkdownStreamControllerImpl = class {
+@@ -2220,6 +2254,7 @@ var MarkdownStreamControllerImpl = class {
  			chars: cfg.streamThrottleChars ?? DEFAULT_THROTTLE_CHARS
  		}, () => this.pushContent());
  		this.maxChars = cfg.streamMaxElementChars ?? DEFAULT_MAX_ELEMENT_CHARS;
@@ -49,7 +58,7 @@ index d2ad3a99f4966c78774cb4d8c0ec1076d95890e5..538caaa8b3db877779035c332237cfe5
  	}
  	get messageId() {
  		return this._messageId;
-@@ -2227,12 +2253,14 @@ var MarkdownStreamControllerImpl = class {
+@@ -2227,12 +2262,14 @@ var MarkdownStreamControllerImpl = class {
  	async append(chunk) {
  		if (!chunk) return;
  		await this.ensureStarted();
@@ -66,15 +75,51 @@ index d2ad3a99f4966c78774cb4d8c0ec1076d95890e5..538caaa8b3db877779035c332237cfe5
  		this.throttle.note(Number.MAX_SAFE_INTEGER);
  	}
  	async run(producer) {
-@@ -2252,6 +2280,7 @@ var MarkdownStreamControllerImpl = class {
+@@ -2252,6 +2289,43 @@ var MarkdownStreamControllerImpl = class {
  		const cardSpec = buildStreamingCard((this.sender.config.streamInitialText ?? DEFAULT_INITIAL) || "...");
  		this.cardId = await this.sender.createCardInstance(cardSpec);
  		this._messageId = await this.sender.sendCardByReference(this.to, this.idType, this.cardId, this.opts);
 +		this.cardStartedAt = Date.now();
++		this.armRolloverTimer();
++	}
++	/** (Re)start the wall-clock rollover timer for the card that is live now. */
++	armRolloverTimer() {
++		this.clearRolloverTimer();
++		if (this.maxAgeMs <= 0 || this.finishing) return;
++		this.rolloverTimer = setTimeout(() => {
++			this.rolloverTimer = void 0;
++			void this.rolloverOnAge();
++		}, this.maxAgeMs);
++		this.rolloverTimer?.unref?.();
++	}
++	clearRolloverTimer() {
++		if (!this.rolloverTimer) return;
++		clearTimeout(this.rolloverTimer);
++		this.rolloverTimer = void 0;
++	}
++	/**
++	* Timer-driven age rollover — the path that survives a silent run. Goes
++	* through the update queue so it can never race a concurrent
++	* setContent/pushSnapshot. Deliberately not re-armed here: while
++	* pendingNewCard is set there is no live card to age out, and
++	* startContinuationCard re-arms once real content opens the next one. That
++	* also keeps an idle run from spawning a card every maxAgeMs.
++	*/
++	async rolloverOnAge() {
++		if (!this.cardId || this.streamingFailed || this.finishing || this.pendingNewCard) return;
++		await this.queue.enqueue(async () => {
++			if (!this.cardId || this.streamingFailed || this.finishing || this.pendingNewCard) return;
++			try {
++				await this.finalizeForRollover();
++			} catch (e) {
++				this.streamingFailed = true;
++				this.sender.logger.warn?.("[stream] age rollover failed", e);
++			}
++		});
  	}
  	async pushContent() {
  		if (!this.cardId || this.streamingFailed) return;
-@@ -2271,6 +2300,11 @@ var MarkdownStreamControllerImpl = class {
+@@ -2271,6 +2345,11 @@ var MarkdownStreamControllerImpl = class {
  	* pushContent and the terminal helpers so they share rollover behavior.
  	*/
  	async pushSnapshot() {
@@ -86,13 +131,14 @@ index d2ad3a99f4966c78774cb4d8c0ec1076d95890e5..538caaa8b3db877779035c332237cfe5
  		while (this.content.length > this.maxChars) await this.rollover();
  		const snapshot = this.content || "...";
  		await this.sender.updateCardElementContent(this.cardId, ELEMENT_ID, snapshot, ++this.sequence);
-@@ -2294,13 +2328,54 @@ var MarkdownStreamControllerImpl = class {
+@@ -2294,13 +2373,58 @@ var MarkdownStreamControllerImpl = class {
  		const newMessageId = await this.sender.sendCardByReference(this.to, this.idType, newCardId, this.opts);
  		this.cardId = newCardId;
  		this.content = tail;
 +		this.baselineLen = Math.max(0, this.fullContent.length - tail.length);
 +		this.sequence = 0;
 +		this.cardStartedAt = Date.now();
++		this.armRolloverTimer();
 +		this.rolloverMessageIds.push(newMessageId);
 +	}
 +	/**
@@ -112,6 +158,7 @@ index d2ad3a99f4966c78774cb4d8c0ec1076d95890e5..538caaa8b3db877779035c332237cfe5
 +		this.baselineLen = this.fullContent.length;
 +		this.content = "";
 +		this.pendingNewCard = true;
++		this.clearRolloverTimer();
 +	}
 +	/**
 +	* Age-based rollover, part 2: create the fresh streaming card that continues
@@ -127,10 +174,12 @@ index d2ad3a99f4966c78774cb4d8c0ec1076d95890e5..538caaa8b3db877779035c332237cfe5
  		this.sequence = 0;
 +		this.cardStartedAt = Date.now();
 +		this.pendingNewCard = false;
++		this.armRolloverTimer();
  		this.rolloverMessageIds.push(newMessageId);
  	}
  	async completeTerminal() {
 +		this.finishing = true;
++		this.clearRolloverTimer();
  		await this.throttle.flushNow();
  		await this.queue.drain();
  		if (!this.cardId) return;
@@ -141,11 +190,12 @@ index d2ad3a99f4966c78774cb4d8c0ec1076d95890e5..538caaa8b3db877779035c332237cfe5
  		if (!this.content && !this.streamingFailed) {
  			await this.queue.enqueue(async () => {
  				try {
-@@ -2316,6 +2391,7 @@ var MarkdownStreamControllerImpl = class {
+@@ -2316,6 +2440,8 @@ var MarkdownStreamControllerImpl = class {
  		}
  	}
  	async failTerminal(_err) {
 +		this.finishing = true;
++		this.clearRolloverTimer();
  		this.throttle.dispose();
  		if (!this.cardId) return;
  		this.content = (this.content || "") + ERROR_FOOTER;
