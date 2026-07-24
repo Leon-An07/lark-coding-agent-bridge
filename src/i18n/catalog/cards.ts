@@ -71,9 +71,12 @@ export const cardsZh = {
   optCotBrief: '精简',
   optCotDetailed: '详细',
   modelHeading:
-    '\n**默认模型**\n' +
-    '_全局默认模型,传给 claude 的 `--model`_\n' +
-    '_填别名(opus / sonnet / fable)或完整模型名;留空 = 用 CLI 默认_',
+    '**模型**\n' +
+    '_底层 agent 运行使用的模型_\n' +
+    '_「跟随默认」= 不指定,由 CLI/账号决定_',
+  modelOptDefault: '跟随默认（不指定）',
+  modelOptLatest: (name: string) => `${name}（最新）`,
+  modelOptOpusPlan: 'Opus Plan（规划用 Opus，执行用 Sonnet）',
   effortHeading:
     '\n**推理强度(effort)**\n' +
     '_全局默认推理强度,传给 claude 的 `--effort`_\n' +
@@ -352,9 +355,12 @@ export const cardsEn: typeof cardsZh = {
   optCotBrief: 'Brief',
   optCotDetailed: 'Detailed',
   modelHeading:
-    '\n**Default model**\n' +
-    '_Global default model, passed to claude as `--model`_\n' +
-    '_Use an alias (opus / sonnet / fable) or a full model id; leave empty = CLI default_',
+    '**Model**\n' +
+    '_The model the underlying agent runs on_\n' +
+    '_"Follow default" = unset; the CLI / account decides_',
+  modelOptDefault: 'Follow default (unset)',
+  modelOptLatest: (name: string) => `${name} (latest)`,
+  modelOptOpusPlan: 'Opus Plan (Opus plans, Sonnet executes)',
   effortHeading:
     '\n**Reasoning effort**\n' +
     '_Global default reasoning effort, passed to claude as `--effort`_\n' +
@@ -633,9 +639,12 @@ export const cardsJa: typeof cardsZh = {
   optCotBrief: '簡易',
   optCotDetailed: '詳細',
   modelHeading:
-    '\n**デフォルトモデル**\n' +
-    '_全体のデフォルトモデル。claude の `--model` に渡されます_\n' +
-    '_エイリアス(opus / sonnet / fable)またはフルモデル名を入力。空欄 = CLI のデフォルト_',
+    '**モデル**\n' +
+    '_内部の agent が実行に使用するモデル_\n' +
+    '_「デフォルトに従う」= 指定なし。CLI / アカウント側が決定します_',
+  modelOptDefault: 'デフォルトに従う（指定なし）',
+  modelOptLatest: (name: string) => `${name}（最新）`,
+  modelOptOpusPlan: 'Opus Plan（計画は Opus、実行は Sonnet）',
   effortHeading:
     '\n**推論の強度(effort)**\n' +
     '_全体のデフォルト推論強度。claude の `--effort` に渡されます_\n' +
