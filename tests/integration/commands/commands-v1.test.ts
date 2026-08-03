@@ -324,7 +324,7 @@ describe('Bridge command contracts', () => {
     ).resolves.toBe(true);
 
     let root = await loadRootConfig(h.controls.configPath);
-    expect(root?.profiles.claude?.access.requireMentionInGroupOverrides).toEqual({
+    expect(root?.profiles.claude?.access.chatRequireMention).toEqual({
       'oc-group-1': false,
     });
     expect(lastMarkdown(h.channel)).toContain('专属群免 @');
@@ -339,7 +339,7 @@ describe('Bridge command contracts', () => {
     ).resolves.toBe(true);
 
     root = await loadRootConfig(h.controls.configPath);
-    expect(root?.profiles.claude?.access.requireMentionInGroupOverrides).toEqual({
+    expect(root?.profiles.claude?.access.chatRequireMention).toEqual({
       'oc-group-1': true,
     });
     expect(lastMarkdown(h.channel)).toContain('需要 @bot');
@@ -353,7 +353,9 @@ describe('Bridge command contracts', () => {
     ).resolves.toBe(true);
 
     root = await loadRootConfig(h.controls.configPath);
-    expect(root?.profiles.claude?.access.requireMentionInGroupOverrides).toEqual({});
+    // Clearing the last override drops the key entirely — `normalizeAccess`
+    // omits an empty map so configs without per-chat overrides stay clean.
+    expect(root?.profiles.claude?.access.chatRequireMention).toBeUndefined();
     expect(lastMarkdown(h.channel)).toContain('跟随全局设置');
   });
 });

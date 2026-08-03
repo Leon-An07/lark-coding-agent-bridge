@@ -115,6 +115,7 @@ export const cardsZh = {
   emptyList: '_(空)_',
   itemsCount: (n: number) => `${n} 项`,
   configSavedBody: (p: {
+    mode: 'personal' | 'team';
     replyLabel: string;
     showToolCalls: boolean;
     model?: string;
@@ -129,6 +130,7 @@ export const cardsZh = {
     adminsSummary: string;
   }) =>
     '✅ **偏好已保存**\n\n' +
+    `**运行模式**:\`${p.mode === 'team' ? '团队版' : '个人版'}\`\n` +
     `**消息回复方式**:${p.replyLabel}\n` +
     `**工具调用显示**:\`${p.showToolCalls ? 'show' : 'hide'}\`\n` +
     `**默认模型**:\`${p.model ?? '默认'}\`\n` +
@@ -137,8 +139,16 @@ export const cardsZh = {
     `**run 探活**:\`${p.runIdleTimeoutMinutes > 0 ? `${p.runIdleTimeoutMinutes} 分钟` : '关闭'}\`\n` +
     `**群里需要 @bot（全局默认）**:\`${p.requireMentionInGroup ? '是' : '专属群免 @'}\`\n` +
     `**单群 @ 例外**:${p.mentionOverridesSummary}\n\n` +
-    `**lark-cli 身份策略**:\`${p.allowUserIdentity ? '允许用户身份' : '只允许应用身份'}\`\n\n` +
-    '🔒 **访问控制**\n' +
+    `**lark-cli 身份策略**:\`${
+      p.mode === 'team'
+        ? '只允许应用身份(团队版强制)'
+        : p.allowUserIdentity
+          ? '允许用户身份'
+          : '只允许应用身份'
+    }\`\n\n` +
+    '🔒 **访问控制**' +
+    (p.mode === 'team' ? '（_团队版下不生效,任何人可用_）' : '') +
+    '\n' +
     `**允许私聊的用户**:${p.allowedUsersSummary}\n` +
     `**允许响应的群**:${p.allowedChatsSummary}\n` +
     `**管理员**:${p.adminsSummary}\n\n` +
@@ -399,6 +409,7 @@ export const cardsEn: typeof cardsZh = {
   emptyList: '_(empty)_',
   itemsCount: (n: number) => `${n} item(s)`,
   configSavedBody: (p: {
+    mode: 'personal' | 'team';
     replyLabel: string;
     showToolCalls: boolean;
     model?: string;
@@ -413,6 +424,7 @@ export const cardsEn: typeof cardsZh = {
     adminsSummary: string;
   }) =>
     '✅ **Preferences saved**\n\n' +
+    `**Deployment mode**: \`${p.mode === 'team' ? 'team' : 'personal'}\`\n` +
     `**Reply style**: ${p.replyLabel}\n` +
     `**Tool call display**: \`${p.showToolCalls ? 'show' : 'hide'}\`\n` +
     `**Default model**: \`${p.model ?? 'default'}\`\n` +
@@ -421,8 +433,16 @@ export const cardsEn: typeof cardsZh = {
     `**Run keepalive**: \`${p.runIdleTimeoutMinutes > 0 ? `${p.runIdleTimeoutMinutes} min` : 'off'}\`\n` +
     `**Require @bot in groups (global default)**: \`${p.requireMentionInGroup ? 'yes' : 'mention-free dedicated group'}\`\n` +
     `**Per-group @ exceptions**: ${p.mentionOverridesSummary}\n\n` +
-    `**lark-cli identity policy**: \`${p.allowUserIdentity ? 'allow user identity' : 'app identity only'}\`\n\n` +
-    '🔒 **Access control**\n' +
+    `**lark-cli identity policy**: \`${
+      p.mode === 'team'
+        ? 'app identity only (forced by team mode)'
+        : p.allowUserIdentity
+          ? 'allow user identity'
+          : 'app identity only'
+    }\`\n\n` +
+    '🔒 **Access control**' +
+    (p.mode === 'team' ? ' (_not enforced in team mode — anyone can use the bot_)' : '') +
+    '\n' +
     `**Users allowed to DM**: ${p.allowedUsersSummary}\n` +
     `**Groups the bot responds in**: ${p.allowedChatsSummary}\n` +
     `**Admins**: ${p.adminsSummary}\n\n` +
@@ -683,6 +703,7 @@ export const cardsJa: typeof cardsZh = {
   emptyList: '_(なし)_',
   itemsCount: (n: number) => `${n} 件`,
   configSavedBody: (p: {
+    mode: 'personal' | 'team';
     replyLabel: string;
     showToolCalls: boolean;
     model?: string;
@@ -697,6 +718,7 @@ export const cardsJa: typeof cardsZh = {
     adminsSummary: string;
   }) =>
     '✅ **設定を保存しました**\n\n' +
+    `**動作モード**:\`${p.mode === 'team' ? 'チーム版' : '個人版'}\`\n` +
     `**メッセージ返信方式**:${p.replyLabel}\n` +
     `**ツール呼び出しの表示**:\`${p.showToolCalls ? 'show' : 'hide'}\`\n` +
     `**デフォルトモデル**:\`${p.model ?? 'デフォルト'}\`\n` +
@@ -705,8 +727,16 @@ export const cardsJa: typeof cardsZh = {
     `**run キープアライブ**:\`${p.runIdleTimeoutMinutes > 0 ? `${p.runIdleTimeoutMinutes} 分` : 'オフ'}\`\n` +
     `**グループで @bot を必須にする（グローバル既定）**:\`${p.requireMentionInGroup ? 'はい' : '専用グループで @ 不要'}\`\n` +
     `**グループ別 @ 例外**:${p.mentionOverridesSummary}\n\n` +
-    `**lark-cli アイデンティティポリシー**:\`${p.allowUserIdentity ? 'ユーザーのアイデンティティを許可' : 'アプリのアイデンティティのみ'}\`\n\n` +
-    '🔒 **アクセス制御**\n' +
+    `**lark-cli アイデンティティポリシー**:\`${
+      p.mode === 'team'
+        ? 'アプリのアイデンティティのみ（チーム版で強制）'
+        : p.allowUserIdentity
+          ? 'ユーザーのアイデンティティを許可'
+          : 'アプリのアイデンティティのみ'
+    }\`\n\n` +
+    '🔒 **アクセス制御**' +
+    (p.mode === 'team' ? '（_チーム版では無効 — 誰でも利用できます_）' : '') +
+    '\n' +
     `**DM を許可するユーザー**:${p.allowedUsersSummary}\n` +
     `**応答を許可するグループ**:${p.allowedChatsSummary}\n` +
     `**管理者**:${p.adminsSummary}\n\n` +

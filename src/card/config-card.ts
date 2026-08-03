@@ -1,12 +1,14 @@
 import { supportedModels } from '../agent/models';
 import type { KnownChat } from '../bot/lark-info';
-import type { AgentKind, LarkCliIdentityPreset } from '../config/profile-schema';
+import type { AgentKind, LarkCliIdentityPreset, ProfileMode } from '../config/profile-schema';
 import type { CotMessagesMode, MessageReplyMode } from '../config/schema';
 import { activeLocale, msgs, type Locale } from '../i18n';
 
 export interface ConfigFormOpts {
   /** Profile's agent kind — decides which model catalog the picker shows. */
   agentKind: AgentKind;
+  /** Deployment mode: 'personal' (default) or 'team'. */
+  mode: ProfileMode;
   /** Current model selection (a value from {@link supportedModels}). */
   model: string;
   messageReply: MessageReplyMode;
@@ -18,7 +20,8 @@ export interface ConfigFormOpts {
   /** 0 means "disabled". */
   runIdleTimeoutMinutes: number;
   requireMentionInGroup: boolean;
-  requireMentionInGroupOverrides: Record<string, boolean>;
+  /** Per-chat @-mention overrides; absent/empty when none are set. */
+  chatRequireMention?: Record<string, boolean>;
   larkCliIdentity: LarkCliIdentityPreset;
   /** Current UI language (caller passes `getLanguage(cfg)`). Falls back to
    * the ambient active locale, which is set from the same preference. */
@@ -27,6 +30,9 @@ export interface ConfigFormOpts {
   allowedChats: string[];
   admins: string[];
   knownChats: KnownChat[];
+  /** URL of the running local web console (supervisor `--web-ui` mode). Shown
+   * at the top of the card when present; omitted when no console is running. */
+  consoleUrl?: string;
 }
 
 function collapsedAccessPanel(title: string, elements: object[]): object {
@@ -80,7 +86,22 @@ function mentionOverrideList(overrides: Record<string, boolean>, knownChats: Kno
 /** Form card for `/config`. */
 export function configFormCard(opts: ConfigFormOpts): object {
   const m = msgs().cards;
+  // TODO(i18n): upstream's team-mode strings are still hardcoded zh — same
+  // deferral policy as the 2026-07-10 merge; translate in a follow-up pass.
+  const teamMode = opts.mode === 'team';
+  const teamOverrideNote =
+    '\n\n_⚠️ 团队版已开启：本项被覆盖 —— 身份强制为「只允许应用身份」、访问控制不生效。切回个人版后恢复。_';
   const accessElements: object[] = [
+    ...(teamMode
+      ? [
+          {
+            tag: 'markdown',
+            content:
+              '_⚠️ **团队版已开启**：访问控制暂不生效 —— 任何人 @ bot 都能使用（管理命令仍限 owner/管理员）。切回个人版后以下白名单恢复生效。_',
+          },
+          { tag: 'hr' },
+        ]
+      : []),
     {
       tag: 'markdown',
       content: m.accessIntro,
@@ -102,8 +123,8 @@ export function configFormCard(opts: ConfigFormOpts): object {
     {
       tag: 'markdown',
       content: m.accessMentionOverrides(
-        Object.keys(opts.requireMentionInGroupOverrides).length,
-        mentionOverrideList(opts.requireMentionInGroupOverrides, opts.knownChats),
+        Object.keys(opts.chatRequireMention ?? {}).length,
+        mentionOverrideList(opts.chatRequireMention ?? {}, opts.knownChats),
       ),
     },
     { tag: 'hr' },
@@ -122,6 +143,16 @@ export function configFormCard(opts: ConfigFormOpts): object {
           tag: 'markdown',
           content: m.configIntro,
         },
+        ...(opts.consoleUrl
+          ? [
+              {
+                tag: 'markdown',
+                content:
+                  `🖥️ **Web 控制台**（本机 127.0.0.1，可管理所有 profile 的启动/停止与配置）\n` +
+                  `[${opts.consoleUrl}](${opts.consoleUrl})`,
+              },
+            ]
+          : []),
         { tag: 'hr' },
         {
           tag: 'form',
@@ -145,6 +176,23 @@ export function configFormCard(opts: ConfigFormOpts): object {
             //     { text: { tag: 'plain_text', content: m.optCard }, value: 'card' },
             //   ],
             // },
+            {
+              tag: 'markdown',
+              content:
+                '**运行模式**\n' +
+                '_个人版(默认):Bot 是你一个人的助手,只有你和白名单用户能用,可携带你的个人授权访问文档/日历等_\n' +
+                '_团队版:Bot 是团队共用的助手,任何人 @ 即可使用(不做白名单校验);为避免他人借 Bot 动用你的个人权限,此模式下 CLI 强制只用应用(bot)身份,不使用个人授权_',
+            },
+            {
+              tag: 'select_static',
+              name: 'deploy_mode',
+              initial_option: opts.mode,
+              options: [
+                { text: { tag: 'plain_text', content: '个人版(默认)' }, value: 'personal' },
+                { text: { tag: 'plain_text', content: '团队版' }, value: 'team' },
+              ],
+            },
+            { tag: 'hr' },
             {
               tag: 'markdown',
               content: m.modelHeading,
@@ -245,7 +293,7 @@ export function configFormCard(opts: ConfigFormOpts): object {
             },
             {
               tag: 'markdown',
-              content: m.identityHeading,
+              content: m.identityHeading + (teamMode ? teamOverrideNote : ''),
             },
             {
               tag: 'select_static',
@@ -330,6 +378,7 @@ export function configSavedCard(opts: ConfigFormOpts): object {
         {
           tag: 'markdown',
           content: m.configSavedBody({
+            mode: opts.mode,
             replyLabel,
             showToolCalls: opts.showToolCalls,
             model: opts.model,
@@ -337,7 +386,7 @@ export function configSavedCard(opts: ConfigFormOpts): object {
             maxConcurrentRuns: opts.maxConcurrentRuns,
             runIdleTimeoutMinutes: opts.runIdleTimeoutMinutes,
             requireMentionInGroup: opts.requireMentionInGroup,
-            mentionOverridesSummary: summarize(Object.keys(opts.requireMentionInGroupOverrides)),
+            mentionOverridesSummary: summarize(Object.keys(opts.chatRequireMention ?? {})),
             allowUserIdentity: opts.larkCliIdentity === 'user-default',
             allowedUsersSummary: summarize(opts.allowedUsers),
             allowedChatsSummary: summarize(opts.allowedChats),

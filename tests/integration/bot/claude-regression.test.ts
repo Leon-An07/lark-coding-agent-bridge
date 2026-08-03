@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getMessageReplyMode, getRequireMentionInGroup } from '../../../src/config/schema.js';
+import { requireMentionForChat } from '../../../src/policy/access.js';
+import type { ProfileConfig } from '../../../src/config/profile-schema.js';
 import { PendingQueue } from '../../../src/bot/pending-queue.js';
 import type { NormalizedMessage } from '@larksuite/channel';
 
@@ -21,18 +23,23 @@ describe('Claude IM regression boundaries', () => {
   it('lets a chat-specific mention setting override the global default', () => {
     const cfg = {
       accounts: { app: { id: 'app-id', secret: 'secret', tenant: 'feishu' as const } },
-      access: {
-        requireMentionInGroup: true,
-        requireMentionInGroupOverrides: {
-          oc_quiet: false,
-          oc_strict: true,
-        },
-      },
+      access: { requireMentionInGroup: true },
     };
+    // Per-chat overrides live on the profile and are resolved by the policy
+    // layer; `getRequireMentionInGroup` only answers the global default.
+    const profile = {
+      access: {
+        allowedUsers: [],
+        allowedChats: [],
+        admins: [],
+        requireMentionInGroup: true,
+        chatRequireMention: { oc_quiet: false, oc_strict: true },
+      },
+    } as unknown as ProfileConfig;
 
-    expect(getRequireMentionInGroup(cfg, 'oc_quiet')).toBe(false);
-    expect(getRequireMentionInGroup(cfg, 'oc_strict')).toBe(true);
-    expect(getRequireMentionInGroup(cfg, 'oc_default')).toBe(true);
+    expect(requireMentionForChat(profile, cfg, 'oc_quiet')).toBe(false);
+    expect(requireMentionForChat(profile, cfg, 'oc_strict')).toBe(true);
+    expect(requireMentionForChat(profile, cfg, 'oc_default')).toBe(true);
   });
 
   it('keeps markdown as the default reply mode and card as the explicit stop-button mode', () => {
@@ -74,7 +81,9 @@ describe('Claude IM regression boundaries', () => {
     const source = await readFile(join(process.cwd(), 'src/bot/channel.ts'), 'utf8');
 
     expect(source).toContain('respondToMentionAll: false');
-    expect(source).toContain('getRequireMentionInGroup(controls.cfg, msg.chatId)');
+    // The group-mention gate honors a per-chat override first, then the global
+    // setting (both resolved by requireMentionForChat).
+    expect(source).toContain('requireMentionForChat(controls.profileConfig, controls.cfg, msg.chatId)');
     expect(source).toContain('!msg.mentionedBot');
     expect(source).toContain('msg.chatType !== \'p2p\'');
   });

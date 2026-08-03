@@ -13,7 +13,7 @@ export interface FingerprintInputV2 {
 }
 
 export interface ResourceScopeDigestInput {
-  source: 'im' | 'card' | 'comment';
+  source: 'im' | 'card' | 'comment' | 'meeting';
   chatId?: string;
   threadId?: string;
   commentScopeId?: string;
@@ -50,8 +50,8 @@ export function accessPolicyDigest(access: ProfileConfig['access']): string {
     allowedChats: [...access.allowedChats].sort(),
     allowedUsers: [...access.allowedUsers].sort(),
     requireMentionInGroup: access.requireMentionInGroup,
-    requireMentionInGroupOverrides: Object.fromEntries(
-      Object.entries(access.requireMentionInGroupOverrides).sort(([a], [b]) => a.localeCompare(b)),
+    chatRequireMention: Object.fromEntries(
+      Object.entries(access.chatRequireMention ?? {}).sort(([a], [b]) => a.localeCompare(b)),
     ),
   });
 }

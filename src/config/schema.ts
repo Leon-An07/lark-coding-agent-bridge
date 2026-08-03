@@ -88,7 +88,14 @@ export interface AppAccess {
   admins?: string[];
   /** Legacy/flat-config default for whether group messages require @bot. */
   requireMentionInGroup?: boolean;
-  /** chat_id-specific overrides for requireMentionInGroup. */
+  /** Per-chat @-mention override (chat_id → bool); overrides the global
+   * requireMentionInGroup for the listed chats. */
+  chatRequireMention?: Record<string, boolean>;
+  /**
+   * @deprecated Pre-rename name for {@link chatRequireMention}. Still read by
+   * `normalizeAccess` so configs written before the merge with upstream keep
+   * their per-chat overrides.
+   */
   requireMentionInGroupOverrides?: Record<string, boolean>;
 }
 
@@ -277,20 +284,11 @@ export function getEffort(cfg: AppConfig): AgentEffort | undefined {
  * `!== false` check makes "undefined" (older configs that don't have the
  * field) inherit the new safer default automatically.
  */
-export function getRequireMentionInGroup(cfg: AppConfig, chatId?: string): boolean {
+export function getRequireMentionInGroup(cfg: AppConfig): boolean {
   const profileAccess = (cfg as AppConfig & {
-    access?: {
-      requireMentionInGroup?: boolean;
-      requireMentionInGroupOverrides?: Record<string, boolean>;
-    };
+    access?: { requireMentionInGroup?: boolean };
   }).access;
   const legacyAccess = cfg.preferences?.access;
-  if (chatId) {
-    const override =
-      profileAccess?.requireMentionInGroupOverrides?.[chatId] ??
-      legacyAccess?.requireMentionInGroupOverrides?.[chatId];
-    if (typeof override === 'boolean') return override;
-  }
   if (cfg.preferences?.requireMentionInGroup !== undefined) {
     return cfg.preferences.requireMentionInGroup !== false;
   }

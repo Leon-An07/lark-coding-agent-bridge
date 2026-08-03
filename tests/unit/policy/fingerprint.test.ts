@@ -103,7 +103,7 @@ describe('policy fingerprint', () => {
         allowedUsers: ['ou_b', 'ou_a'],
         allowedChats: ['oc_b', 'oc_a'],
         admins: ['ou_admin_b', 'ou_admin_a'],
-        requireMentionInGroupOverrides: {
+        chatRequireMention: {
           oc_z: false,
           oc_y: true,
         },
@@ -116,7 +116,7 @@ describe('policy fingerprint', () => {
         allowedUsers: ['ou_a', 'ou_b'],
         allowedChats: ['oc_a', 'oc_b'],
         admins: ['ou_admin_a', 'ou_admin_b'],
-        requireMentionInGroupOverrides: {
+        chatRequireMention: {
           oc_y: true,
           oc_z: false,
         },

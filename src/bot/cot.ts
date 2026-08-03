@@ -253,7 +253,9 @@ export class CotPublisher {
 export function finalAnswerOnlyState(state: RunState): RunState {
   return {
     ...state,
-    blocks: state.blocks.filter((b) => b.kind === 'text'),
+    blocks: state.finalText
+      ? [{ kind: 'text', content: state.finalText, streaming: false }]
+      : state.blocks.filter((b) => b.kind === 'text'),
     reasoning: { content: '', active: false },
     footer: null,
   };
@@ -351,6 +353,7 @@ export async function consumeCotEvents(
         });
         continue;
       }
+      if (evt.type === 'final_text') continue;
       if (evt.type === 'done' || evt.type === 'error') {
         closeReasoningIfNeeded();
         closeTextIfNeeded();

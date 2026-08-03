@@ -6,6 +6,7 @@ import { createDefaultProfileConfig } from '../../../src/config/profile-schema.j
 import { SessionStore } from '../../../src/session/store.js';
 import { WorkspaceStore } from '../../../src/workspace/store.js';
 import { FakeAgentAdapter } from '../../helpers/fake-agent.js';
+import type { AgentEvent } from '../../../src/agent/types.js';
 import { createTmpProfile, type TmpProfile } from '../../helpers/tmp-profile.js';
 
 const sdkMock = vi.hoisted(() => ({
@@ -51,13 +52,14 @@ interface FakeLarkChannel {
   getAppInfo: ReturnType<typeof vi.fn>;
   listChats: ReturnType<typeof vi.fn>;
   fetchRawMessage: ReturnType<typeof vi.fn>;
+  recallMessage: ReturnType<typeof vi.fn>;
   on(handlers: MessageHandlerMap): void;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   getChatMode(chatId: string): Promise<'group' | 'topic'>;
   getConnectionStatus(): { state: 'connected'; reconnectAttempts: number };
   send(chatId: string, content: unknown, options?: unknown): Promise<{ messageId: string }>;
-  stream(chatId: string, input: unknown, options?: unknown): Promise<void>;
+  stream(chatId: string, input: unknown, options?: unknown): Promise<{ messageId: string }>;
 }
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -95,7 +97,15 @@ describe('topic message quote handling', () => {
   });
 
   it('treats messages with threadId as topic messages even when chat mode cache says group', async () => {
-    const h = await createHarness({ chatMode: 'group' });
+    // The agent has to say something for a progress stream to exist at all —
+    // see "does not open a progress stream when the agent produces no content".
+    const h = await createHarness({
+      chatMode: 'group',
+      agentEvents: [
+        { type: 'text', delta: '好的' },
+        { type: 'done', terminationReason: 'normal' },
+      ],
+    });
 
     await startTestBridge(h);
 
@@ -129,6 +139,10 @@ describe('topic message quote handling', () => {
     const h = await createHarness({
       chatMode: 'topic',
       rawThreadIds: { om_topic_start: 'omt_backfilled' },
+      agentEvents: [
+        { type: 'text', delta: '好的' },
+        { type: 'done', terminationReason: 'normal' },
+      ],
     });
 
     await startTestBridge(h);
@@ -158,7 +172,13 @@ describe('topic message quote handling', () => {
   it('does not thread the reply when a topic-group event has no recoverable threadId', async () => {
     // Backfill lookup returns nothing → degrade gracefully to chat-level
     // routing rather than crashing or blocking the run.
-    const h = await createHarness({ chatMode: 'topic' });
+    const h = await createHarness({
+      chatMode: 'topic',
+      agentEvents: [
+        { type: 'text', delta: '好的' },
+        { type: 'done', terminationReason: 'normal' },
+      ],
+    });
 
     await startTestBridge(h);
 
@@ -271,6 +291,72 @@ describe('topic message quote handling', () => {
     expect(prompt).not.toContain('<topic_context>');
   });
 
+  it('does not open a progress stream when the agent produces no content', async () => {
+    // The SDK starts a stream eagerly and finishes an empty one with its
+    // "(no content)" placeholder, so a content-less run used to post a card and
+    // recall it seconds later. Nothing durable to show → no message at all.
+    const h = await createHarness({
+      chatMode: 'group',
+      agentEvents: [{ type: 'done', terminationReason: 'normal' }],
+    });
+
+    await startTestBridge(h);
+
+    await h.channel.handlers.message?.(
+      message({ messageId: 'om_empty', rootId: 'om_empty', parentId: 'om_empty', content: '@Bridge ping' }),
+    );
+    await waitFor(() => h.agent.runOptions.length === 1);
+    // give the (absent) stream and its recall a chance to fire before asserting
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(h.channel.streams).toHaveLength(0);
+    expect(h.channel.sent).toHaveLength(0);
+    expect(h.channel.recallMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not recall when the agent produced real content', async () => {
+    const h = await createHarness({
+      chatMode: 'group',
+      agentEvents: [
+        { type: 'text', delta: '这是真正的回答' },
+        { type: 'done', terminationReason: 'normal' },
+      ],
+    });
+
+    await startTestBridge(h);
+
+    await h.channel.handlers.message?.(
+      message({ messageId: 'om_real', rootId: 'om_real', parentId: 'om_real', content: '@Bridge 问题' }),
+    );
+    await waitFor(() => h.channel.streams.length === 1);
+    // give any (erroneous) recall a chance to fire before asserting it didn't
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(h.channel.recallMessage).not.toHaveBeenCalled();
+  });
+
+  it('skips a group message that does not mention the bot (requireMention default)', async () => {
+    const h = await createHarness({ chatMode: 'group' });
+
+    await startTestBridge(h);
+
+    await h.channel.handlers.message?.(
+      message({
+        messageId: 'om_no_at',
+        rootId: 'om_no_at',
+        parentId: 'om_no_at',
+        content: '@同事 这里的帖子哪些是我们做的',
+        mentionedBot: false,
+      }),
+    );
+    // no run should start; give the pipeline a moment to (not) act
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(h.agent.runOptions).toHaveLength(0);
+    expect(h.channel.streams).toHaveLength(0);
+    expect(h.channel.recallMessage).not.toHaveBeenCalled();
+  });
+
   it('keeps regular group reply quotes as quoted context', async () => {
     const h = await createHarness({
       chatMode: 'group',
@@ -330,11 +416,60 @@ describe('topic message quote handling', () => {
   });
 });
 
+describe('merge_forward fetch failure', () => {
+  it('skips the run and hints the user when the SDK could not fetch a merge_forward', async () => {
+    // @larksuite/channel >= 0.4.1 normalizes an un-fetchable merge_forward to
+    // the fetch_failed sentinel. Feeding it to the agent would look like an
+    // empty forward, so intake must reply a recoverable hint and start no run.
+    const h = await createHarness({ chatMode: 'group' });
+
+    await startTestBridge(h);
+
+    await h.channel.handlers.message?.(
+      message({
+        messageId: 'om_forward_failed',
+        rootId: 'om_forward_failed',
+        parentId: 'om_forward_failed',
+        content: '<forwarded_messages status="fetch_failed"/>',
+        rawContentType: 'merge_forward',
+      }),
+    );
+    await waitFor(() => h.channel.sent.length === 1);
+
+    expect(h.agent.runOptions).toHaveLength(0);
+    expect(h.channel.streams).toHaveLength(0);
+    const hint = h.channel.sent.at(-1);
+    expect(hint?.options).toMatchObject({ replyTo: 'om_forward_failed' });
+    expect((hint?.content as { text?: string }).text).toContain('重新转发');
+  });
+
+  it('still runs when a merge_forward was genuinely empty (not a fetch failure)', async () => {
+    const h = await createHarness({ chatMode: 'group' });
+
+    await startTestBridge(h);
+
+    await h.channel.handlers.message?.(
+      message({
+        messageId: 'om_forward_empty',
+        rootId: 'om_forward_empty',
+        parentId: 'om_forward_empty',
+        content: '<forwarded_messages/>',
+        rawContentType: 'merge_forward',
+      }),
+    );
+    await waitFor(() => h.agent.runOptions.length === 1);
+
+    expect(h.agent.runOptions).toHaveLength(1);
+    expect(h.channel.sent).toHaveLength(0);
+  });
+});
+
 async function createHarness(options: {
   chatMode?: 'group' | 'topic';
   quotedMessages?: Record<string, string>;
   rawThreadIds?: Record<string, string>;
   threadMessages?: Array<Record<string, unknown>>;
+  agentEvents?: AgentEvent[];
 } = {}):Promise<{
   tmp: TmpProfile;
   channel: FakeLarkChannel & { handlers: MessageHandlerMap };
@@ -370,7 +505,7 @@ async function createHarness(options: {
   const sessions = new SessionStore(join(tmp.profile, 'sessions.json'));
   const workspaces = new WorkspaceStore(join(tmp.profile, 'workspaces.json'));
   const agent = new FakeAgentAdapter({
-    events: [{ type: 'done', terminationReason: 'normal' }],
+    events: options.agentEvents ?? [{ type: 'done', terminationReason: 'normal' }],
   });
   const channel = createFakeLarkChannel(options);
   sdkMock.channel = channel;
@@ -477,7 +612,9 @@ function createFakeLarkChannel(options: {
       if (isMarkdownStreamInput(input)) {
         await input.markdown({ setContent: async () => {} });
       }
+      return { messageId: `om_stream_${streams.length}` };
     },
+    recallMessage: vi.fn(async () => {}),
   };
 }
 
@@ -501,7 +638,11 @@ function message(input: {
   parentId: string;
   threadId?: string;
   content: string;
+  rawContentType?: string;
+  mentionedBot?: boolean;
+  mentions?: Array<{ key: string; openId: string; name: string; isBot: boolean }>;
 }): NormalizedMessage {
+  const mentionedBot = input.mentionedBot ?? true;
   return {
     messageId: input.messageId,
     chatId: 'oc_topic_chat',
@@ -509,11 +650,15 @@ function message(input: {
     senderId: 'ou_user',
     senderName: 'User',
     content: input.content,
-    rawContentType: 'text',
+    rawContentType: input.rawContentType ?? 'text',
     resources: [],
-    mentions: [{ key: '@_user_1', openId: 'ou_bot', name: 'Bridge', isBot: true }],
+    mentions:
+      input.mentions ??
+      (mentionedBot
+        ? [{ key: '@_user_1', openId: 'ou_bot', name: 'Bridge', isBot: true }]
+        : [{ key: '@_user_1', openId: 'ou_human', name: '同事', isBot: false }]),
     mentionAll: false,
-    mentionedBot: true,
+    mentionedBot,
     rootId: input.rootId,
     parentId: input.parentId,
     ...(input.threadId ? { threadId: input.threadId } : {}),

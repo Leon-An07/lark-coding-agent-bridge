@@ -268,7 +268,7 @@ async function* createEventStream(
 
   const earlyRuntimeError = getError();
   if (earlyRuntimeError && child.exitCode === null && child.signalCode === null) {
-    yield terminalError(`codex runtime error: ${earlyRuntimeError.message}`);
+    yield* translator.fail(`codex runtime error: ${earlyRuntimeError.message}`);
     return;
   }
 
@@ -284,31 +284,23 @@ async function* createEventStream(
     if (!translator.terminalEmitted()) {
       const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
       const detail = stderr ? `: ${stderr.slice(0, 500)}` : '';
-      yield terminalError(`codex exited with code ${exitCode}${detail}`);
+      yield* translator.fail(`codex exited with code ${exitCode}${detail}`);
     }
     return;
   }
   if (runtimeError && !translator.terminalEmitted()) {
-    yield terminalError(`codex runtime error: ${runtimeError.message}`);
+    yield* translator.fail(`codex runtime error: ${runtimeError.message}`);
     return;
   }
   if (exitCode === null && child.signalCode && !translator.terminalEmitted()) {
     // Killed by a signal we didn't send (stopReason would be set otherwise).
     // exitCode stays null on signal death, so without this branch the run
     // is finalized as success.
-    yield terminalError(`codex killed by signal ${child.signalCode}`);
+    yield* translator.fail(`codex killed by signal ${child.signalCode}`);
     return;
   }
 
   yield* translator.finish();
-}
-
-function terminalError(message: string): AgentEvent {
-  return {
-    type: 'error',
-    message,
-    terminationReason: 'failed',
-  };
 }
 
 async function waitForExitCode(child: CodexChild): Promise<number | null> {
