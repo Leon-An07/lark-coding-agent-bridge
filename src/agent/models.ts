@@ -33,7 +33,9 @@ function claudeModels(): ModelOption[] {
   const m = msgs().cards;
   return [
     { value: DEFAULT_MODEL, label: m.modelOptDefault },
-    { value: 'claude-opus-4-8', label: m.modelOptLatest('Opus 4.8') },
+    { value: 'claude-fable-5', label: 'Fable 5' },
+    { value: 'claude-opus-5', label: m.modelOptLatest('Opus 5') },
+    { value: 'claude-opus-4-8', label: 'Opus 4.8' },
     { value: 'claude-opus-4-7', label: 'Opus 4.7' },
     { value: 'claude-sonnet-5', label: m.modelOptLatest('Sonnet 5') },
     { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
@@ -42,14 +44,24 @@ function claudeModels(): ModelOption[] {
   ];
 }
 
-/** Codex CLI models. Forwarded to `codex exec --model`. */
+/**
+ * Codex CLI models. Forwarded to `codex exec --model`.
+ *
+ * The three GPT-5.6 tiers are codex's own presets — each ships a `slug` +
+ * `display_name` in the binary: Sol is the flagship, Terra the mini-like
+ * middle tier, Luna the nano-like fast one. The bare `gpt-5.6` alias routes to
+ * Sol, so it isn't listed separately. Unlike the Claude list — where every past
+ * generation is still served and stays selectable — codex retires generations
+ * outright ("GPT-5.4 is no longer available"), so superseded ids are removed
+ * here rather than kept alongside.
+ */
 function codexModels(): ModelOption[] {
   const m = msgs().cards;
   return [
     { value: DEFAULT_MODEL, label: m.modelOptDefault },
-    { value: 'gpt-5-codex', label: 'GPT-5 Codex' },
-    { value: 'gpt-5', label: 'GPT-5' },
-    { value: 'o3', label: 'o3' },
+    { value: 'gpt-5.6-sol', label: m.modelOptLatest('GPT-5.6 Sol') },
+    { value: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
+    { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
   ];
 }
 

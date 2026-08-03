@@ -113,11 +113,11 @@ describe('Codex argv contract', () => {
       cwd: '/repo',
       sandbox: 'workspace-write',
       threadId: 'thread-123',
-      model: 'gpt-5-codex',
+      model: 'gpt-5.6-sol',
     });
     expect(args).toContain('--model');
     const modelIdx = args.indexOf('--model');
-    expect(args[modelIdx + 1]).toBe('gpt-5-codex');
+    expect(args[modelIdx + 1]).toBe('gpt-5.6-sol');
     // Global flag: must come before the `resume` subcommand.
     expect(modelIdx).toBeLessThan(args.indexOf('resume'));
   });
