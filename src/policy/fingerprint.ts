@@ -50,7 +50,16 @@ export function accessPolicyDigest(access: ProfileConfig['access']): string {
     allowedChats: [...access.allowedChats].sort(),
     allowedUsers: [...access.allowedUsers].sort(),
     requireMentionInGroup: access.requireMentionInGroup,
-    chatRequireMention: Object.fromEntries(
+    // Digest key deliberately keeps the pre-merge field name. The digest feeds
+    // `policyFingerprint`, which `SessionCatalog.matchesIdentity` requires an
+    // exact match on — renaming the key to `chatRequireMention` here would
+    // change every fingerprint and orphan every catalog entry, so each chat and
+    // topic would silently start a brand-new agent session after the upgrade.
+    // The name is an on-disk digest input, not an API; the value is the current
+    // `chatRequireMention` map. (Official omits this map from the digest
+    // entirely — this fork treats per-chat mention policy as part of the
+    // policy identity, which predates the merge.)
+    requireMentionInGroupOverrides: Object.fromEntries(
       Object.entries(access.chatRequireMention ?? {}).sort(([a], [b]) => a.localeCompare(b)),
     ),
   });

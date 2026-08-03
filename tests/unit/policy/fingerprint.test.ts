@@ -3,6 +3,7 @@ import { createDefaultProfileConfig } from '../../../src/config/profile-schema';
 import {
   accessPolicyDigest,
   attachmentPolicyShapeDigest,
+  digestCanonical,
   policyFingerprint,
   resourceScopeDigest,
   type FingerprintInputV2,
@@ -136,6 +137,47 @@ describe('policy fingerprint', () => {
         threadId: 'omt_1',
         resourceBindings: ['doc_a', 'doc_b'],
       }),
+    );
+  });
+
+  it('digests the per-chat mention map under its pre-merge key', () => {
+    // `policyFingerprint` is persisted per entry in sessions.json.catalog.json
+    // and `matchesIdentity` demands an exact match, so if this digest input key
+    // had followed the `requireMentionInGroupOverrides` → `chatRequireMention`
+    // field rename, every catalog entry would have been orphaned on upgrade and
+    // every chat/topic would silently start a fresh agent session. Pin the
+    // digest of a known access shape so that can't regress unnoticed.
+    const access = {
+      allowedUsers: ['ou_b', 'ou_a'],
+      allowedChats: ['oc_2', 'oc_1'],
+      admins: ['ou_admin'],
+      requireMentionInGroup: true,
+      chatRequireMention: { oc_quiet: false, oc_strict: true },
+    };
+
+    expect(accessPolicyDigest(access)).toBe(
+      digestCanonical({
+        admins: ['ou_admin'],
+        allowedChats: ['oc_1', 'oc_2'],
+        allowedUsers: ['ou_a', 'ou_b'],
+        requireMentionInGroup: true,
+        requireMentionInGroupOverrides: { oc_quiet: false, oc_strict: true },
+      }),
+    );
+  });
+
+  it('treats an omitted per-chat map and an empty one as the same policy', () => {
+    // `normalizeAccess` omits the map when empty; pre-merge configs stored it
+    // as `{}`. Both must fingerprint alike or the upgrade resets sessions.
+    const withoutMap = {
+      allowedUsers: ['ou_a'],
+      allowedChats: ['oc_1'],
+      admins: [],
+      requireMentionInGroup: true,
+    };
+
+    expect(accessPolicyDigest({ ...withoutMap, chatRequireMention: {} })).toBe(
+      accessPolicyDigest(withoutMap),
     );
   });
 });
