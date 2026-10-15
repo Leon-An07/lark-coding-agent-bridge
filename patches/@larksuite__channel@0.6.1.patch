@@ -1,8 +1,8 @@
 diff --git a/dist/index.mjs b/dist/index.mjs
-index 2a93361f45a7dacefc5341a6acc463e863f2b669..653906240b2acdcccaae7324a119661381e01fab 100644
+index 7056327..4f012f1 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
-@@ -2290,6 +2290,14 @@ const ERROR_FOOTER = "\n\n— _(Generation interrupted)_";
+@@ -3987,6 +3987,14 @@ const ERROR_FOOTER = "\n\n— _(Generation interrupted)_";
  const DEFAULT_MAX_ELEMENT_CHARS = 3e4;
  const ELEMENT_ID = "stream_md";
  /**
@@ -17,7 +17,7 @@ index 2a93361f45a7dacefc5341a6acc463e863f2b669..653906240b2acdcccaae7324a1196613
  * Shorten a markdown content string into a single-line preview suitable for
  * the card's `summary.content` — shown in chat lists / message previews.
  */
-@@ -2371,6 +2379,32 @@ var MarkdownStreamControllerImpl = class {
+@@ -4068,6 +4076,32 @@ var MarkdownStreamControllerImpl = class {
  	/** messageIds of every rollover card created after the head. */
  	rolloverMessageIds = [];
  	maxChars;
@@ -50,7 +50,7 @@ index 2a93361f45a7dacefc5341a6acc463e863f2b669..653906240b2acdcccaae7324a1196613
  	constructor(sender, to, idType, opts) {
  		this.sender = sender;
  		this.to = to;
-@@ -2382,6 +2416,7 @@ var MarkdownStreamControllerImpl = class {
+@@ -4079,6 +4113,7 @@ var MarkdownStreamControllerImpl = class {
  			chars: cfg.streamThrottleChars ?? DEFAULT_THROTTLE_CHARS
  		}, () => this.pushContent());
  		this.maxChars = cfg.streamMaxElementChars ?? DEFAULT_MAX_ELEMENT_CHARS;
@@ -58,7 +58,7 @@ index 2a93361f45a7dacefc5341a6acc463e863f2b669..653906240b2acdcccaae7324a1196613
  	}
  	get messageId() {
  		return this._messageId;
-@@ -2389,12 +2424,14 @@ var MarkdownStreamControllerImpl = class {
+@@ -4086,12 +4121,14 @@ var MarkdownStreamControllerImpl = class {
  	async append(chunk) {
  		if (!chunk) return;
  		await this.ensureStarted();
@@ -75,7 +75,7 @@ index 2a93361f45a7dacefc5341a6acc463e863f2b669..653906240b2acdcccaae7324a1196613
  		this.throttle.note(Number.MAX_SAFE_INTEGER);
  	}
  	async run(producer) {
-@@ -2414,6 +2451,43 @@ var MarkdownStreamControllerImpl = class {
+@@ -4111,6 +4148,43 @@ var MarkdownStreamControllerImpl = class {
  		const cardSpec = buildStreamingCard((this.sender.config.streamInitialText ?? DEFAULT_INITIAL) || "...");
  		this.cardId = await this.sender.createCardInstance(cardSpec);
  		this._messageId = await this.sender.sendCardByReference(this.to, this.idType, this.cardId, this.opts);
@@ -119,7 +119,7 @@ index 2a93361f45a7dacefc5341a6acc463e863f2b669..653906240b2acdcccaae7324a1196613
  	}
  	async pushContent() {
  		if (!this.cardId || this.streamingFailed) return;
-@@ -2433,6 +2507,11 @@ var MarkdownStreamControllerImpl = class {
+@@ -4130,6 +4204,11 @@ var MarkdownStreamControllerImpl = class {
  	* pushContent and the terminal helpers so they share rollover behavior.
  	*/
  	async pushSnapshot() {
@@ -131,7 +131,7 @@ index 2a93361f45a7dacefc5341a6acc463e863f2b669..653906240b2acdcccaae7324a1196613
  		while (this.content.length > this.maxChars) await this.rollover();
  		const snapshot = this.content || "...";
  		await this.sender.updateCardElementContent(this.cardId, ELEMENT_ID, snapshot, ++this.sequence);
-@@ -2456,13 +2535,58 @@ var MarkdownStreamControllerImpl = class {
+@@ -4153,13 +4232,58 @@ var MarkdownStreamControllerImpl = class {
  		const newMessageId = await this.sender.sendCardByReference(this.to, this.idType, newCardId, this.opts);
  		this.cardId = newCardId;
  		this.content = tail;
@@ -190,7 +190,7 @@ index 2a93361f45a7dacefc5341a6acc463e863f2b669..653906240b2acdcccaae7324a1196613
  		if (!this.content && !this.streamingFailed) {
  			await this.queue.enqueue(async () => {
  				try {
-@@ -2478,6 +2602,8 @@ var MarkdownStreamControllerImpl = class {
+@@ -4175,6 +4299,8 @@ var MarkdownStreamControllerImpl = class {
  		}
  	}
  	async failTerminal(_err) {

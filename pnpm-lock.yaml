@@ -5,9 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@larksuite/channel@0.4.1':
-    hash: c5fff7c68b12afe63a3d0a845bf0d4bee181497e3839b6e75962e7bc4a0c9d58
-    path: patches/@larksuite__channel@0.4.1.patch
+  '@larksuite/channel@0.6.1':
+    hash: ee792eff57d46497d07566052cc2a1bfbcbbcc77d274f962dd511c4b0cefea97
+    path: patches/@larksuite__channel@0.6.1.patch
 
 importers:
 
@@ -17,8 +17,8 @@ importers:
         specifier: ^1.4.0
         version: 1.7.0
       '@larksuite/channel':
-        specifier: ^0.4.1
-        version: 0.4.1(patch_hash=c5fff7c68b12afe63a3d0a845bf0d4bee181497e3839b6e75962e7bc4a0c9d58)
+        specifier: ^0.6.0
+        version: 0.6.1(patch_hash=ee792eff57d46497d07566052cc2a1bfbcbbcc77d274f962dd511c4b0cefea97)
       commander:
         specifier: ^12.1.0
         version: 12.1.0
@@ -464,12 +464,12 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@larksuite/channel@0.4.1':
-    resolution: {integrity: sha512-9xklkzGEnME9MCCKlSzgG0FERJV4HlNX52hthytpxxP2oqH5S8lQBixPsHYU0AQ8SBfzP+LaGz5QaDOlP4EY0A==}
+  '@larksuite/channel@0.6.1':
+    resolution: {integrity: sha512-touDREgE7c2KNx2HuzELexCMbVpB+gO54Sn0oOeB9axlekIDeku9HxzJBoRTocXtnykegk39NMC8QgPmSI3fTQ==}
     engines: {node: '>=18'}
 
-  '@larksuiteoapi/node-sdk@1.72.0':
-    resolution: {integrity: sha512-8oKnaTxRFRNPQfeeG69yafdLzWvvrvXlIqX3QRvozR1/6kvZyi9iMhp6lwC+hMgJA/GCFwMZRadkJzlUE+kyvQ==}
+  '@larksuiteoapi/node-sdk@1.75.0':
+    resolution: {integrity: sha512-HVHamfS/skiYsKTCpk6z7oIux3eo0DYQR6HZXGMHsNFZ4rYkhcKKSD9aU7iY26grupl9AP+cg3fisXNcMrqyLA==}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -863,6 +863,12 @@ packages:
 
   '@radix-ui/rect@1.1.3':
     resolution: {integrity: sha512-JtyZR+mqgBibTo8xea3B6ZRmzZiM/YeVBtUkas6zMuXjAlfIFIW2FgqeM9eLyvEaYX66vr6DJMK+4U6LV0KhNw==}
+
+  '@rolldown/binding-android-arm64@1.2.2':
+    resolution: {integrity: sha512-l7x215OGvo1s52JWmR8U/DAVzEDWBCIbTm28aeJV/WDTSHgcKXaZTuBT0hJMs5NggilfJTW3clZVvd24yfKJxA==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [arm64]
+    os: [android]
 
   '@rolldown/binding-darwin-arm64@1.2.2':
     resolution: {integrity: sha512-9u9Xv6c1AJZT0FfwH5vrMG5Jjcwhc1MlyrPu0XfTqkzsmqfks2M6W/o5XwAJgVVN/jHpqqngC1WevHKKTIUtIA==}
@@ -2384,9 +2390,9 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@larksuite/channel@0.4.1(patch_hash=c5fff7c68b12afe63a3d0a845bf0d4bee181497e3839b6e75962e7bc4a0c9d58)':
+  '@larksuite/channel@0.6.1(patch_hash=ee792eff57d46497d07566052cc2a1bfbcbbcc77d274f962dd511c4b0cefea97)':
     dependencies:
-      '@larksuiteoapi/node-sdk': 1.72.0
+      '@larksuiteoapi/node-sdk': 1.75.0
       https-proxy-agent: 9.1.0
     transitivePeerDependencies:
       - bufferutil
@@ -2395,7 +2401,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@larksuiteoapi/node-sdk@1.72.0':
+  '@larksuiteoapi/node-sdk@1.75.0':
     dependencies:
       axios: 1.19.0
       lodash.identity: 3.0.0
@@ -2773,6 +2779,9 @@ snapshots:
       '@types/react-dom': 19.2.4(@types/react@19.2.18)
 
   '@radix-ui/rect@1.1.3': {}
+
+  '@rolldown/binding-android-arm64@1.2.2':
+    optional: true
 
   '@rolldown/binding-darwin-arm64@1.2.2':
     optional: true
@@ -3593,6 +3602,7 @@ snapshots:
       '@oxc-project/types': 0.142.0
       '@rolldown/pluginutils': 1.0.1
     optionalDependencies:
+      '@rolldown/binding-android-arm64': 1.2.2
       '@rolldown/binding-darwin-arm64': 1.2.2
       '@rolldown/binding-darwin-x64': 1.2.2
       '@rolldown/binding-freebsd-x64': 1.2.2
