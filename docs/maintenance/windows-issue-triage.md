@@ -13,7 +13,7 @@ Fork commits referenced:
 
 - `1370160` fix(windows): survive CJK codepages and localized schtasks
 - `495ec99` feat(i18n): follow the OS locale and translate the remaining CLI text
-- the "fix(windows): upstream Windows issues" commit that adds this file
+- `e81b6bf` fix(windows): fix triaged upstream Windows issues
 
 ## Table
 

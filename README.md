@@ -2,7 +2,7 @@
 
 A lightweight bot that bridges Feishu / Lark messenger with your local Claude Code or Codex CLI. Run one command, scan a QR code to bind a PersonalAgent app, and talk to your local coding agent from chat.
 
-[中文 README](./README.zh.md)
+[中文 README](./README.zh.md) · [日本語 README](./README.ja.md)
 
 For a product walkthrough, see the [Feishu document](https://larkcommunity.feishu.cn/docx/OaRIdFIRFoLM3xxTmKwcetHqn5e).
 
@@ -113,8 +113,11 @@ lark-channel-bridge run [--profile <name>] [--agent claude|codex] [--workspace <
 lark-channel-bridge migrate [--profile <name>] [--agent claude|codex]
 lark-channel-bridge ps
 lark-channel-bridge kill <id|#>
+lark-channel-bridge skills install [--agent claude|codex] [--dest <dir>] [--force]
 lark-channel-bridge --help
 ```
+
+`skills install` copies the skills bundled in the package (`skills/`) into each agent found on PATH: `~/.claude/skills` for Claude Code and `~/.codex/skills` for Codex (`$CLAUDE_CONFIG_DIR` / `$CODEX_HOME` are respected). An existing skill with the same name is kept unless you pass `--force`.
 
 `profile use <name>` changes the profile used by later default starts. Use these profile management commands when running separate Claude / Codex bots, connecting multiple PersonalAgent apps, or doing scripted deployment:
 
@@ -317,6 +320,37 @@ Cloud-doc comments do not need a separate workspace binding or document allowlis
 **The agent subprocess looks frozen (card stuck on the last frame).** The bridge supports an idle watchdog: if the agent emits nothing for N minutes, the process is killed and the card is annotated with the auto-termination reason. Disabled by default. Enable with `/config` globally, or `/timeout 10` for the current session; `/timeout off` disables it for the session; `/timeout default` clears the session override.
 
 **The agent says it cannot see an image I sent.** Upgrade to the latest version. Releases before 0.1.0 had a filename-dedup bug.
+
+## Windows troubleshooting
+
+Most Windows reports upstream (see #128 and #131) trace back to a few causes. This fork fixes several of them. The full list is in [docs/maintenance/windows-issue-triage.md](./docs/maintenance/windows-issue-triage.md).
+
+**Install and run.**
+
+- Use Node 20.12 or newer. Older versions fail at startup with a `styleText` error.
+- Install globally with `npm install -g lark-channel-bridge` before you use `start`. A service started through `npx` breaks when npm cleans its cache.
+- If you cannot get the service to work, run `lark-channel-bridge run` in a terminal. Closing that terminal stops the bot.
+
+**Japanese or Chinese Windows.**
+
+- The CLI follows the Windows display language when no language is set in `/config`. Earlier versions showed Chinese to every user who had no `LANG` variable.
+- User folders with non-ASCII names (for example `C:\Users\田中`) work. The generated `.cmd` files now refer to them as `%USERPROFILE%`. Before, `cmd.exe` read the UTF-8 path in the system code page (CP932 or GBK) and could not find it.
+- Error output from `schtasks`, `npm`, and `lark-cli` is decoded from the system code page, so it is readable instead of mojibake.
+- `start`, `stop`, and `status` no longer depend on English `schtasks` output.
+
+**Background service (`start`).**
+
+- `start` registers a Task Scheduler task for your own account only, so it no longer needs an administrator shell. The task has no 72-hour limit and also runs on battery.
+- `stop` now ends the bridge's whole process tree. Before, `schtasks /End` left `node.exe` running, and the next `start` reported "already in use".
+- The service task still opens a console window. Closing that window stops the bot.
+- If a restart still reports "already in use", run `lark-channel-bridge ps` and `lark-channel-bridge kill <id>`. Do not end the process from Task Manager.
+
+**`lark-cli configuration failed ... is world-writable (mode 0666)`.** The bot connects and replies, but cards and Feishu API calls from the agent fail. lark-cli checks the secrets wrapper file with Unix permission bits, and Windows reports every writable file as 0666. This is not fixed yet. Workarounds:
+
+- Start with `lark-channel-bridge run --skip-check-lark-cli`.
+- Or run the bridge in WSL2.
+
+**"(no content)" for every message.** Update to the current version. Old versions passed the prompt through `cmd.exe`, which removed part of it.
 
 ## Testing and CI
 

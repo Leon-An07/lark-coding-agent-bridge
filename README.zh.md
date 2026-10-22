@@ -2,7 +2,7 @@
 
 把飞书 / Lark 消息和本地 Claude Code 或 Codex CLI 打通的轻量 bot。用一条命令启动，扫码绑定 PersonalAgent 应用，然后在飞书里和本机编程助手对话，让它读图、处理文件、改代码。
 
-[English README](./README.md)
+[English README](./README.md) · [日本語 README](./README.ja.md)
 
 关于能实现的效果，详情可以阅读[飞书文档](https://larkcommunity.feishu.cn/docx/OaRIdFIRFoLM3xxTmKwcetHqn5e)
 
@@ -90,7 +90,9 @@ daemon 日志在 `~/.lark-channel/profiles/<profile>/logs/daemon/`。
 
 ### 多 profile：分别运行 Claude 和 Codex
 
-默认情况下，bridge 使用当前激活的 profile；可以通过 `profile use <name>` 切换。每个 profile 会维护独立的应用凭据、会话、工作目录和日志。只有在需要同时连接多个 PersonalAgent 应用，或分别运行 Claude 和 Codex 时，才需要创建多个 profile：
+默认情况下，bridge 使用当前激活的 profile；可以通过 `skills install` 把包内附带的 skills（`skills/` 目录）安装到 PATH 中找到的每个 agent：Claude Code 装到 `~/.claude/skills`，Codex 装到 `~/.codex/skills`（会遵循 `$CLAUDE_CONFIG_DIR` / `$CODEX_HOME`）。同名 skill 已存在时保留不动，加 `--force` 才覆盖。
+
+`profile use <name>` 切换。每个 profile 会维护独立的应用凭据、会话、工作目录和日志。只有在需要同时连接多个 PersonalAgent 应用，或分别运行 Claude 和 Codex 时，才需要创建多个 profile：
 
 ```bash
 lark-channel-bridge start --profile claude --agent claude
@@ -113,6 +115,7 @@ lark-channel-bridge run [--profile <name>] [--agent claude|codex] [--workspace <
 lark-channel-bridge migrate [--profile <name>] [--agent claude|codex]
 lark-channel-bridge ps
 lark-channel-bridge kill <id|#>
+lark-channel-bridge skills install [--agent claude|codex] [--dest <dir>] [--force]
 lark-channel-bridge --help
 ```
 
@@ -317,6 +320,37 @@ grep '"event":"enter"' ~/.lark-channel/profiles/<profile>/logs/bridge-$(date +%Y
 **agent 子进程假死（卡片停在最后一帧不动）**：支持 idle 探活。agent 一段时间没输出就会被 SIGTERM kill，卡片末尾会标出自动终止原因。默认关闭。开启方式：`/config` 设全局值（分钟），或 `/timeout 10` 只对当前会话生效；`/timeout off` 关掉当前会话的探活；`/timeout default` 清掉会话覆盖，回退到全局设置。
 
 **图片发过去 agent 说看不到**：升级到最新版，0.1.0 之前的版本有文件名去重 bug。
+
+## Windows 常见问题
+
+上游的大部分 Windows 报告（见 #128、#131）来自少数几个原因，本 fork 已修复其中几项。完整列表见 [docs/maintenance/windows-issue-triage.md](./docs/maintenance/windows-issue-triage.md)。
+
+**安装与运行**
+
+- 使用 Node 20.12 或更高版本。更旧的版本启动时会报 `styleText` 错误。
+- 使用 `start` 前，先用 `npm install -g lark-channel-bridge` 全局安装。通过 `npx` 启动的服务会在 npm 清理缓存后失效。
+- 后台服务实在跑不起来时，在终端里运行 `lark-channel-bridge run`。关闭该终端会停止 bot。
+
+**日文 / 中文 Windows**
+
+- `/config` 里没设置语言时，CLI 跟随 Windows 的显示语言。旧版本对没有 `LANG` 变量的用户一律显示中文。
+- 用户目录名含非 ASCII 字符（如 `C:\Users\田中`）也能正常工作。生成的 `.cmd` 文件现在用 `%USERPROFILE%` 引用这些路径。以前 `cmd.exe` 用系统代码页（CP932 或 GBK）读取 UTF-8 路径，找不到文件。
+- `schtasks`、`npm`、`lark-cli` 的错误输出按系统代码页解码，不再是乱码。
+- `start`、`stop`、`status` 不再依赖英文的 `schtasks` 输出。
+
+**后台服务（`start`）**
+
+- `start` 只为当前账号注册计划任务，不再需要管理员终端。任务没有 72 小时的运行上限，用电池时也会运行。
+- `stop` 现在会结束 bridge 的整个进程树。以前 `schtasks /End` 会留下 `node.exe`，下次 `start` 报"已被占用"。
+- 后台任务仍会打开一个控制台窗口。关闭该窗口会停止 bot。
+- 重启后仍报"已被占用"时，运行 `lark-channel-bridge ps` 和 `lark-channel-bridge kill <id>`。不要用任务管理器结束进程。
+
+**`lark-cli configuration failed ... is world-writable (mode 0666)`**：bot 能连上并回复，但 agent 发卡片、调用飞书 API 会失败。lark-cli 用 Unix 权限位检查密钥包装文件，而 Windows 把所有可写文件都报告为 0666。该问题尚未修复。临时办法：
+
+- 用 `lark-channel-bridge run --skip-check-lark-cli` 启动。
+- 或在 WSL2 中运行 bridge。
+
+**每条消息都回复"(no content)"**：升级到当前版本。旧版本通过 `cmd.exe` 传递 prompt，会吞掉其中一部分。
 
 ## 测试与 CI
 
