@@ -8,12 +8,17 @@ import type { Readable, Writable } from 'node:stream';
 import { spawnSync } from 'node:child_process';
 import crossSpawn from 'cross-spawn';
 
+/** Windows: no console window per child (claude, codex, lark-cli...), which
+ * otherwise flashes a black window for every message (#51). Callers can
+ * still pass `windowsHide: false`. Ignored on other platforms. */
+const HIDE_WINDOW = { windowsHide: true } as const;
+
 export function spawnProcess(
   command: string,
   args: readonly string[] = [],
   options: SpawnOptions = {},
 ): ChildProcess {
-  return crossSpawn(command, [...args], options);
+  return crossSpawn(command, [...args], { ...HIDE_WINDOW, ...options });
 }
 
 /**
@@ -21,11 +26,16 @@ export function spawnProcess(
  * spawned with `detached: true` on POSIX so it leads its own process group —
  * signalling -pid then reaches grandchildren (Bash tools, MCP servers,
  * lark-cli waiting on OAuth) that a plain child.kill() would orphan. Falls
- * back to a direct kill when the group signal fails (group already gone, or
- * Windows where process groups don't apply).
+ * back to a direct kill when the group signal fails.
+ *
+ * Windows has no process groups and no graceful SIGTERM: child.kill() only
+ * ends the direct child, which for a `.cmd` shim is cmd.exe, leaving the
+ * real agent running (#274). taskkill /T ends the whole tree.
  */
 export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): boolean {
-  if (child.pid !== undefined && process.platform !== 'win32') {
+  if (child.pid !== undefined && process.platform === 'win32') {
+    if (killWindowsProcessTree(child.pid)) return true;
+  } else if (child.pid !== undefined) {
     try {
       process.kill(-child.pid, signal);
       return true;
@@ -63,7 +73,7 @@ export function spawnProcessSync(
   args: readonly string[] = [],
   options: SpawnSyncOptions = {},
 ) {
-  return crossSpawn.sync(command, [...args], options);
+  return crossSpawn.sync(command, [...args], { ...HIDE_WINDOW, ...options });
 }
 
 export function mergeProcessEnv(

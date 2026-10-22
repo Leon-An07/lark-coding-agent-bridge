@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { userInfo } from 'node:os';
 import {
   daemonLogDir,
   daemonStderrPath,
@@ -102,30 +103,64 @@ function runSchtasks(args: string[]): SchtasksResult {
 }
 
 /**
- * Create (or overwrite) the scheduled task. Trigger: ONLOGON.
- * `/RL LIMITED` runs as the current user without admin elevation.
- * `/F` overwrites if the task already exists.
+ * Task Scheduler definition for the bridge: start at the current user's
+ * logon, as that user, without elevation.
  *
- * The /TR value is the .cmd wrapper path. Schtasks treats /TR as a command
- * line, so wrapping in quotes keeps spaces in the path intact.
+ * Registered from XML rather than `/SC ONLOGON` flags because the flag form
+ * (a) needs admin rights, since its trigger fires for any user's logon, so
+ * standard users got "Access is denied" (#273); and (b) inherits
+ * schtasks defaults that kill a long-running daemon: stop after 72 hours,
+ * don't start on battery, stop when switching to battery.
+ */
+export function buildTaskXml(inputs: { userId: string; command: string }): string {
+  const x = (v: string): string =>
+    v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return [
+    '<?xml version="1.0" encoding="UTF-16"?>',
+    '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
+    '  <RegistrationInfo><Description>lark-channel-bridge</Description></RegistrationInfo>',
+    '  <Triggers>',
+    `    <LogonTrigger><Enabled>true</Enabled><UserId>${x(inputs.userId)}</UserId></LogonTrigger>`,
+    '  </Triggers>',
+    '  <Principals>',
+    `    <Principal id="Author"><UserId>${x(inputs.userId)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal>`,
+    '  </Principals>',
+    '  <Settings>',
+    '    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>',
+    '    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>',
+    '    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>',
+    '    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>',
+    '    <Enabled>true</Enabled>',
+    '  </Settings>',
+    '  <Actions Context="Author">',
+    `    <Exec><Command>${x(inputs.command)}</Command></Exec>`,
+    '  </Actions>',
+    '</Task>',
+    '',
+  ].join('\r\n');
+}
+
+/** `DOMAIN\user` of the current user, as Task Scheduler expects. */
+function currentWindowsUserId(): string {
+  const user = process.env.USERNAME ?? userInfo().username;
+  const domain = process.env.USERDOMAIN;
+  return domain ? `${domain}\\${user}` : user;
+}
+
+/**
+ * Create (or overwrite) the scheduled task from XML (see buildTaskXml).
+ * The XML is written as UTF-16LE with a BOM, which is what schtasks reads,
+ * so non-ASCII user names and paths survive.
  */
 export async function installTask(
   profile: string,
   runArgs: string[] = ['run'],
 ): Promise<SchtasksResult> {
   await writeLauncherCmd(profile, runArgs);
-  return runSchtasks([
-    '/Create',
-    '/F',
-    '/SC',
-    'ONLOGON',
-    '/RL',
-    'LIMITED',
-    '/TN',
-    windowsTaskName(profile),
-    '/TR',
-    `"${windowsLauncherCmdPath(profile)}"`,
-  ]);
+  const xmlPath = join(dirname(windowsLauncherCmdPath(profile)), 'task.xml');
+  const xml = buildTaskXml({ userId: currentWindowsUserId(), command: windowsLauncherCmdPath(profile) });
+  await writeFile(xmlPath, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(xml, 'utf16le')]));
+  return runSchtasks(['/Create', '/F', '/TN', windowsTaskName(profile), '/XML', xmlPath]);
 }
 
 /** Start the task now (regardless of trigger). */
