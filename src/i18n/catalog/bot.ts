@@ -38,6 +38,10 @@ export const botZh = {
 
   // lark-info.ts
   unnamedChat: '(无名)',
+
+  forwardFetchFailed:
+    '这条合并转发的内容没能从飞书拉取到（上游超时/网络抖动，已自动重试仍失败），' +
+    '所以我没收到里面的消息。麻烦稍后重新转发一次。',
 };
 
 export const botEn: typeof botZh = {
@@ -80,6 +84,10 @@ export const botEn: typeof botZh = {
 
   // lark-info.ts
   unnamedChat: '(unnamed)',
+
+  forwardFetchFailed:
+    'I could not fetch the contents of this forwarded message from Lark (upstream timeout or network glitch; automatic retries also failed), ' +
+    'so I did not receive the messages inside it. Please forward it again later.',
 };
 
 export const botJa: typeof botZh = {
@@ -122,4 +130,8 @@ export const botJa: typeof botZh = {
 
   // lark-info.ts
   unnamedChat: '(名称なし)',
+
+  forwardFetchFailed:
+    'この転送メッセージの内容を Lark から取得できませんでした（上流のタイムアウトまたはネットワークの不調で、自動リトライも失敗しました）。' +
+    'そのため、中のメッセージを受け取れていません。お手数ですが、しばらくしてからもう一度転送してください。',
 };

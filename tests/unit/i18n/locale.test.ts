@@ -41,3 +41,32 @@ describe('locale selection', () => {
     expect(flat(jaJP)).not.toEqual(flat(enUS));
   });
 });
+
+describe('detectOsLocale', () => {
+  it('uses the ICU locale when no POSIX locale var is set (Windows)', async () => {
+    const { detectOsLocale } = await import('../../../src/i18n/index.js');
+    expect(detectOsLocale({}, 'ja-JP')).toBe('ja-JP');
+    expect(detectOsLocale({}, 'zh-CN')).toBe('zh-CN');
+    expect(detectOsLocale({}, 'de-DE')).toBeUndefined();
+  });
+
+  it('prefers LC_ALL over LC_MESSAGES over LANG, and skips C/POSIX', async () => {
+    const { detectOsLocale } = await import('../../../src/i18n/index.js');
+    expect(detectOsLocale({ LC_ALL: 'ja_JP.UTF-8', LANG: 'en_US.UTF-8' }, 'zh-CN')).toBe('ja-JP');
+    expect(detectOsLocale({ LC_MESSAGES: 'en_US.UTF-8', LANG: 'ja_JP.UTF-8' }, 'zh-CN')).toBe('en-US');
+    expect(detectOsLocale({ LANG: 'C.UTF-8' }, 'ja-JP')).toBe('ja-JP');
+    expect(detectOsLocale({ LC_ALL: 'POSIX', LANG: 'ja_JP.UTF-8' }, 'en-US')).toBe('ja-JP');
+  });
+
+  it('gives a config with no language preference the OS locale', async () => {
+    const { getLanguage } = await import('../../../src/config/schema.js');
+    const saved = process.env.LC_ALL;
+    process.env.LC_ALL = 'ja_JP.UTF-8';
+    try {
+      expect(getLanguage({} as never)).toBe('ja-JP');
+      expect(getLanguage({ preferences: { language: 'en-US' } } as never)).toBe('en-US');
+    } finally {
+      process.env.LC_ALL = saved;
+    }
+  });
+});

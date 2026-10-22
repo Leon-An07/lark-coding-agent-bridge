@@ -43,7 +43,8 @@ export const cliZh = {
   }) =>
     `✓ ${p.verb}  bot: ${p.botName} (${p.appId})  agent: ${p.agentName} (${p.agentId})  进程: ${p.procId}`,
   serviceConnectTimeout: (verb: string) => `⚠ 已下发指令,但 30 秒内未观察到 bot 连接成功 (${verb})。`,
-  serviceViewLogs: (path: string) => `  查看日志: tail -f ${path}`,
+  serviceViewLogs: (stderrPath: string, stdoutPath: string) =>
+    `  查看日志: tail -f ${stderrPath}\n            tail -f ${stdoutPath}`,
   serviceOldInstanceRestart: '检测到旧 bot 实例,先停掉再重启...',
   serviceStopOldWarning: (stderr: string) => `⚠ 停止旧实例时有警告(继续重启):\n${stderr}`,
   serviceOldInstanceStuck: '✗ 旧 bot 实例没有完全停止。请稍后重试,或:',
@@ -73,6 +74,31 @@ export const cliZh = {
   serviceUnregistered: '✓ 已清除后台运行注册',
   serviceUnregisteredKeep: (dir: string) => `  (配置 / 日志 / 会话保留在 ${dir})`,
 
+  serviceProfileFallbackToSupervisor: (profile: string) =>
+    `ℹ profile「${profile}」没有独立的后台服务,已指向控制面 supervisor 服务(等同 --web-ui)。`,
+  serviceProfileRequired: '服务命令需要 active profile；请传入 --profile <name>',
+  supervisorOldInstanceRestart: '检测到 supervisor 服务已在运行,先停掉再重启...',
+  supervisorStopOldWarning: (stderr: string) => `⚠ 停止旧 supervisor 时有警告(继续重启):\n${stderr}`,
+  supervisorOldInstanceStuck: '✗ 旧 supervisor 服务没有完全停止。请稍后重试,或:',
+  supervisorUnregisterHint: '  unregister --web-ui  # 强制清除注册',
+  supervisorStartAgainHint: '  start --web-ui       # 再次启动',
+  supervisorConsoleHint: '  控制台由后台 supervisor 托管；用 `lark-channel-bridge ui` 打开',
+  supervisorNeverRanNoStop: 'supervisor 还没在后台运行过,无需停止。',
+  supervisorNotRunning: 'supervisor 当前没在后台运行。',
+  autostartDisabled: '  已关闭开机自启。',
+  supervisorStopped: '✓ 控制面 supervisor 已停止运行',
+  supervisorRestartHint: '  通过 `start --web-ui` 可再次重启',
+  supervisorNeverRanRestart: 'supervisor 还没在后台运行过。请先运行 `start --web-ui` 启动。',
+  supervisorStatusNeverStarted: '控制面 supervisor 当前没在后台运行(从未启动过)',
+  supervisorStatusStartHint: '  通过 `start --web-ui` 启动',
+  supervisorStatusNotRunning: '控制面 supervisor 当前没在后台运行',
+  supervisorStatusRestartHint: '  通过 `start --web-ui` 重新启动',
+  supervisorStatusRunning: '✓ 控制面 supervisor 正在后台运行',
+  statusOnlineBots: (names: string[]) => `  在线 bot: ${names.join('、')}`,
+  supervisorNeverRanNoCleanup: 'supervisor 还没在后台运行过,无需清理。',
+  supervisorStopWarnCleanup: (stderr: string) => `⚠ 停止 supervisor 时有警告(继续清理):\n${stderr}`,
+  supervisorStoppedShort: '✓ 已停止 supervisor',
+
   // ── start (foreground run) ──
   shutdownSignal: (sig: string) => `\n收到 ${sig}，正在关闭...`,
   reconnectedNewCreds: '✓ 已用新凭据重连',
@@ -93,6 +119,15 @@ export const cliZh = {
   agoMinutes: (n: number) => `${n} 分钟前`,
   agoHours: (n: number) => `${n} 小时前`,
   agoDays: (n: number) => `${n} 天前`,
+
+  runProfileOnlineForeground: (profile: string) =>
+    `✓ profile「${profile}」已上线（前台运行，Ctrl-C 退出）`,
+  consoleAlreadyRunningAt: (url: string) => `控制面已在运行：${url}`,
+  consoleAlreadyRunningLocked: '控制面已在运行（另一个 supervisor 进程持有锁）。',
+  consoleReady: (url: string) => `✓ 控制台：${url}`,
+  runProfileOnline: (profile: string) => `✓ profile「${profile}」已上线`,
+  activeProfileStartFailed: (profile: string, message: string) =>
+    `⚠️ active profile「${profile}」启动失败：${message}`,
 
   // ── migrate ──
   migrateProfileUpgraded: (profile: string) => `✓ 已升级 profile 目录结构：${profile}`,
@@ -130,6 +165,12 @@ export const cliZh = {
   psAgoHours: (n: number) => `${n}h 前`,
   psAgoDays: (n: number) => `${n}d 前`,
 
+  killServiceManaged: (id: string, pid: number, platformName: string) =>
+    `✗ bot ${id} (pid ${pid}) 由 ${platformName} 托管,SIGTERM 之后会被服务管理器立刻重启。`,
+  killServiceStopHint: (hint: string) => `  要停掉它:  ${hint}`,
+  killServiceRestartHint: (hint: string) => `  只是想重启: ${hint}`,
+  killDidNotExit: (pid: number) => `进程 ${pid} 在 SIGKILL 之后仍未退出`,
+
   // ── secrets ──
   secretsSetUsage: '用法: lark-channel-bridge secrets set --app-id <id>',
   secretsCancelledEmpty: '✗ 取消(secret 为空)',
@@ -148,6 +189,51 @@ export const cliZh = {
   profileArchived: (name: string, archivedTo: string | undefined) =>
     `已归档 profile: ${name} -> ${archivedTo}`,
   profileExported: (name: string, output: string) => `已导出 profile: ${name} -> ${output}`,
+
+  profileNotFound: (name: string) => `profile 不存在：${name}`,
+  profileAlreadyExists: (name: string) => `profile 已存在：${name}`,
+  profileAgentKindMismatch: (name: string, existing: string, requested: string) =>
+    `profile ${name} 已存在，agentKind 为 ${existing}，但 profile create 指定了 --agent ${requested}。` +
+    `profile 名称只是标签；请使用现有的 ${existing} profile、换一个名称，` +
+    `或先删除 profile ${name} 再创建 ${requested} profile。`,
+  profilePurgeRequiresYes: 'profile remove --purge 需要同时传入 --yes',
+  configNotInitialized: '配置尚未初始化',
+  activeProfileNotFound: (name: string) => `active profile 不存在：${name}；请运行 profile use <name> 修复`,
+  profileLocked: (name: string, pid: number | undefined) =>
+    `profile 已被锁定或正在运行：${name}${pid === undefined ? '' : ` pid=${pid}`}`,
+  profileRemoveRestoreFailed: (p: { name: string; archivedTo: string | undefined; restoreError: string; rootError: string }) =>
+    `移动 ${p.name} 后删除 profile 失败；当前状态在 ${p.archivedTo}。` +
+    `恢复失败：${p.restoreError}。root config 错误：${p.rootError}`,
+  profileExportSecretsRequiresYes: 'profile export --include-secrets 需要同时传入 --yes',
+  profileExportOutputExists: '输出文件已存在；如需覆盖请加 --force',
+
+  // ── ui (open the web console) ──
+  uiOpening: (url: string) => `打开控制台：${url}`,
+  uiNotRunning: [
+    '未检测到运行中的控制面。',
+    '',
+    '控制台需要 supervisor 模式（--web-ui）：',
+    '  lark-channel-bridge run --web-ui        # 前台运行 supervisor + 控制台',
+    '  lark-channel-bridge start --web-ui      # 作为后台服务运行 supervisor + 控制台',
+    '',
+    '（不带 --web-ui 的 run/start 是单 profile 无界面运行，适合无浏览器环境。）',
+    '',
+    '启动后再次运行 `lark-channel-bridge ui` 打开控制台。',
+  ].join('\n'),
+  uiOpenManually: '若浏览器未自动打开，请手动访问上面的地址。',
+  uiCannotOpenBrowser: '无法自动打开浏览器，请手动访问上面的地址。',
+
+  // ── send-card ──
+  sendCardChatIdRequired: '缺少 --chat-id',
+  sendCardFileRequired: '缺少 --file',
+  sendCardTtlInvalid: '--ttl-minutes 必须是正数',
+
+  // ── supervisor (in-process profile hosting) ──
+  supervisorProfileIncomplete: (profile: string) => `profile 配置不完整：${profile}`,
+  supervisorAppAlreadyConnected: (profile: string) =>
+    `该飞书应用已被 profile「${profile}」连接，不能重复上线`,
+  supervisorProfileNotRunning: (profile: string) => `profile 未在运行：${profile}`,
+  supervisorConfigIncompleteAfterChange: '配置变更后 profile 配置不完整',
 
   // ── registration wizard ──
   wizardIntro: '\n未检测到飞书应用配置，进入扫码创建向导。\n',
@@ -313,7 +399,8 @@ export const cliEn: typeof cliZh = {
     `✓ ${p.verb}  bot: ${p.botName} (${p.appId})  agent: ${p.agentName} (${p.agentId})  process: ${p.procId}`,
   serviceConnectTimeout: (verb: string) =>
     `⚠ Command issued, but the bot did not connect within 30 seconds (${verb}).`,
-  serviceViewLogs: (path: string) => `  View logs: tail -f ${path}`,
+  serviceViewLogs: (stderrPath: string, stdoutPath: string) =>
+    `  View logs: tail -f ${stderrPath}\n             tail -f ${stdoutPath}`,
   serviceOldInstanceRestart: 'Old bot instance detected; stopping it before restart...',
   serviceStopOldWarning: (stderr: string) =>
     `⚠ Warning while stopping the old instance (continuing restart):\n${stderr}`,
@@ -345,6 +432,33 @@ export const cliEn: typeof cliZh = {
   serviceUnregistered: '✓ Background service registration cleared',
   serviceUnregisteredKeep: (dir: string) => `  (config / logs / sessions are kept in ${dir})`,
 
+  serviceProfileFallbackToSupervisor: (profile: string) =>
+    `ℹ profile "${profile}" has no service of its own; targeting the control-plane supervisor service instead (same as --web-ui).`,
+  serviceProfileRequired: 'Service commands need an active profile; pass --profile <name>',
+  supervisorOldInstanceRestart: 'The supervisor service is already running; stopping it before restart...',
+  supervisorStopOldWarning: (stderr: string) =>
+    `⚠ Warning while stopping the old supervisor (continuing restart):\n${stderr}`,
+  supervisorOldInstanceStuck: '✗ The old supervisor service did not fully stop. Retry later, or:',
+  supervisorUnregisterHint: '  unregister --web-ui  # force-clear the registration',
+  supervisorStartAgainHint: '  start --web-ui       # start again',
+  supervisorConsoleHint: '  The console is hosted by the background supervisor; open it with `lark-channel-bridge ui`',
+  supervisorNeverRanNoStop: 'The supervisor has never run in the background; nothing to stop.',
+  supervisorNotRunning: 'The supervisor is not running in the background.',
+  autostartDisabled: '  Autostart is now off.',
+  supervisorStopped: '✓ Control-plane supervisor stopped',
+  supervisorRestartHint: '  Run `start --web-ui` to start it again',
+  supervisorNeverRanRestart: 'The supervisor has never run in the background. Run `start --web-ui` first.',
+  supervisorStatusNeverStarted: 'The control-plane supervisor is not running in the background (never started)',
+  supervisorStatusStartHint: '  Run `start --web-ui` to start it',
+  supervisorStatusNotRunning: 'The control-plane supervisor is not running in the background',
+  supervisorStatusRestartHint: '  Run `start --web-ui` to start it again',
+  supervisorStatusRunning: '✓ The control-plane supervisor is running in the background',
+  statusOnlineBots: (names: string[]) => `  Online bots: ${names.join(', ')}`,
+  supervisorNeverRanNoCleanup: 'The supervisor has never run in the background; nothing to clean up.',
+  supervisorStopWarnCleanup: (stderr: string) =>
+    `⚠ Warning while stopping the supervisor (continuing cleanup):\n${stderr}`,
+  supervisorStoppedShort: '✓ supervisor stopped',
+
   // ── start (foreground run) ──
   shutdownSignal: (sig: string) => `\nReceived ${sig}, shutting down...`,
   reconnectedNewCreds: '✓ Reconnected with new credentials',
@@ -368,6 +482,15 @@ export const cliEn: typeof cliZh = {
   agoMinutes: (n: number) => `${n} minutes ago`,
   agoHours: (n: number) => `${n} hours ago`,
   agoDays: (n: number) => `${n} days ago`,
+
+  runProfileOnlineForeground: (profile: string) =>
+    `✓ profile "${profile}" is online (foreground; press Ctrl-C to exit)`,
+  consoleAlreadyRunningAt: (url: string) => `The control plane is already running: ${url}`,
+  consoleAlreadyRunningLocked: 'The control plane is already running (another supervisor process holds the lock).',
+  consoleReady: (url: string) => `✓ Console: ${url}`,
+  runProfileOnline: (profile: string) => `✓ profile "${profile}" is online`,
+  activeProfileStartFailed: (profile: string, message: string) =>
+    `⚠️ Failed to start active profile "${profile}": ${message}`,
 
   // ── migrate ──
   migrateProfileUpgraded: (profile: string) => `✓ Upgraded profile directory layout: ${profile}`,
@@ -408,6 +531,12 @@ export const cliEn: typeof cliZh = {
   psAgoHours: (n: number) => `${n}h ago`,
   psAgoDays: (n: number) => `${n}d ago`,
 
+  killServiceManaged: (id: string, pid: number, platformName: string) =>
+    `✗ bot ${id} (pid ${pid}) is managed by ${platformName}; the service manager restarts it right after SIGTERM.`,
+  killServiceStopHint: (hint: string) => `  To stop it:      ${hint}`,
+  killServiceRestartHint: (hint: string) => `  To restart only: ${hint}`,
+  killDidNotExit: (pid: number) => `process ${pid} did not exit after SIGKILL`,
+
   // ── secrets ──
   secretsSetUsage: 'Usage: lark-channel-bridge secrets set --app-id <id>',
   secretsCancelledEmpty: '✗ Cancelled (secret is empty)',
@@ -426,6 +555,52 @@ export const cliEn: typeof cliZh = {
   profileArchived: (name: string, archivedTo: string | undefined) =>
     `Archived profile: ${name} -> ${archivedTo}`,
   profileExported: (name: string, output: string) => `Exported profile: ${name} -> ${output}`,
+
+  profileNotFound: (name: string) => `profile not found: ${name}`,
+  profileAlreadyExists: (name: string) => `profile already exists: ${name}`,
+  profileAgentKindMismatch: (name: string, existing: string, requested: string) =>
+    `profile ${name} already exists with agentKind ${existing}, ` +
+    `but profile create requested --agent ${requested}. ` +
+    `Profile names are labels; use the existing ${existing} profile, ` +
+    `choose another name, or remove profile ${name} before creating a ${requested} profile.`,
+  profilePurgeRequiresYes: 'profile remove --purge requires --yes',
+  configNotInitialized: 'config not initialized',
+  activeProfileNotFound: (name: string) => `active profile not found: ${name}; run profile use <name> to repair`,
+  profileLocked: (name: string, pid: number | undefined) =>
+    `profile is locked/running: ${name}${pid === undefined ? '' : ` pid=${pid}`}`,
+  profileRemoveRestoreFailed: (p: { name: string; archivedTo: string | undefined; restoreError: string; rootError: string }) =>
+    `profile remove failed after moving ${p.name}; state is at ${p.archivedTo}. ` +
+    `restore failed: ${p.restoreError}. root config error: ${p.rootError}`,
+  profileExportSecretsRequiresYes: 'profile export --include-secrets requires --yes',
+  profileExportOutputExists: 'output already exists; use --force',
+
+  // ── ui (open the web console) ──
+  uiOpening: (url: string) => `Opening the console: ${url}`,
+  uiNotRunning: [
+    'No running control plane found.',
+    '',
+    'The console needs supervisor mode (--web-ui):',
+    '  lark-channel-bridge run --web-ui        # run supervisor + console in the foreground',
+    '  lark-channel-bridge start --web-ui      # run supervisor + console as a background service',
+    '',
+    '(run/start without --web-ui runs a single profile with no UI, for machines without a browser.)',
+    '',
+    'After it starts, run `lark-channel-bridge ui` again to open the console.',
+  ].join('\n'),
+  uiOpenManually: 'If the browser did not open, visit the address above manually.',
+  uiCannotOpenBrowser: 'Could not open a browser; visit the address above manually.',
+
+  // ── send-card ──
+  sendCardChatIdRequired: '--chat-id is required',
+  sendCardFileRequired: '--file is required',
+  sendCardTtlInvalid: '--ttl-minutes must be a positive number',
+
+  // ── supervisor (in-process profile hosting) ──
+  supervisorProfileIncomplete: (profile: string) => `profile config is incomplete: ${profile}`,
+  supervisorAppAlreadyConnected: (profile: string) =>
+    `This Feishu app is already connected by profile "${profile}"; it cannot go online twice`,
+  supervisorProfileNotRunning: (profile: string) => `profile is not running: ${profile}`,
+  supervisorConfigIncompleteAfterChange: 'profile config is incomplete after the change',
 
   // ── registration wizard ──
   wizardIntro: '\nNo Feishu app configuration detected; entering the QR-code creation wizard.\n',
@@ -595,7 +770,8 @@ export const cliJa: typeof cliZh = {
     `✓ ${p.verb}  bot: ${p.botName} (${p.appId})  agent: ${p.agentName} (${p.agentId})  プロセス: ${p.procId}`,
   serviceConnectTimeout: (verb: string) =>
     `⚠ コマンドを実行しましたが、30 秒以内に bot の接続を確認できませんでした (${verb})。`,
-  serviceViewLogs: (path: string) => `  ログの確認: tail -f ${path}`,
+  serviceViewLogs: (stderrPath: string, stdoutPath: string) =>
+    `  ログの確認: tail -f ${stderrPath}\n              tail -f ${stdoutPath}`,
   serviceOldInstanceRestart: '古い bot インスタンスを検出しました。停止してから再起動します...',
   serviceStopOldWarning: (stderr: string) =>
     `⚠ 古いインスタンスの停止時に警告がありました(再起動を続行します):\n${stderr}`,
@@ -630,6 +806,38 @@ export const cliJa: typeof cliZh = {
   serviceUnregistered: '✓ バックグラウンド実行の登録をクリアしました',
   serviceUnregisteredKeep: (dir: string) => `  (設定 / ログ / セッションは ${dir} に保持されます)`,
 
+  serviceProfileFallbackToSupervisor: (profile: string) =>
+    `ℹ profile「${profile}」には専用のバックグラウンドサービスがないため、コントロールプレーンの supervisor サービスを対象にします(--web-ui と同じ)。`,
+  serviceProfileRequired: 'サービスコマンドには active profile が必要です。--profile <name> を指定してください',
+  supervisorOldInstanceRestart: 'supervisor サービスが既に実行中です。停止してから再起動します...',
+  supervisorStopOldWarning: (stderr: string) =>
+    `⚠ 古い supervisor の停止時に警告がありました(再起動を続行します):\n${stderr}`,
+  supervisorOldInstanceStuck:
+    '✗ 古い supervisor サービスが完全に停止しませんでした。しばらくしてから再試行するか、以下を実行してください:',
+  supervisorUnregisterHint: '  unregister --web-ui  # 登録を強制クリア',
+  supervisorStartAgainHint: '  start --web-ui       # 再度起動',
+  supervisorConsoleHint:
+    '  コンソールはバックグラウンドの supervisor が提供しています。`lark-channel-bridge ui` で開いてください',
+  supervisorNeverRanNoStop: 'supervisor はまだバックグラウンドで実行されたことがないため、停止は不要です。',
+  supervisorNotRunning: 'supervisor は現在バックグラウンドで実行されていません。',
+  autostartDisabled: '  自動起動を無効にしました。',
+  supervisorStopped: '✓ コントロールプレーンの supervisor を停止しました',
+  supervisorRestartHint: '  `start --web-ui` で再度起動できます',
+  supervisorNeverRanRestart:
+    'supervisor はまだバックグラウンドで実行されたことがありません。先に `start --web-ui` を実行してください。',
+  supervisorStatusNeverStarted:
+    'コントロールプレーンの supervisor は現在バックグラウンドで実行されていません(まだ起動されていません)',
+  supervisorStatusStartHint: '  `start --web-ui` で起動してください',
+  supervisorStatusNotRunning: 'コントロールプレーンの supervisor は現在バックグラウンドで実行されていません',
+  supervisorStatusRestartHint: '  `start --web-ui` で再度起動してください',
+  supervisorStatusRunning: '✓ コントロールプレーンの supervisor はバックグラウンドで実行中です',
+  statusOnlineBots: (names: string[]) => `  オンラインの bot: ${names.join('、')}`,
+  supervisorNeverRanNoCleanup:
+    'supervisor はまだバックグラウンドで実行されたことがないため、クリーンアップは不要です。',
+  supervisorStopWarnCleanup: (stderr: string) =>
+    `⚠ supervisor の停止時に警告がありました(クリーンアップを続行します):\n${stderr}`,
+  supervisorStoppedShort: '✓ supervisor を停止しました',
+
   // ── start (foreground run) ──
   shutdownSignal: (sig: string) => `\n${sig} を受信しました。シャットダウンしています...`,
   reconnectedNewCreds: '✓ 新しい認証情報で再接続しました',
@@ -654,6 +862,16 @@ export const cliJa: typeof cliZh = {
   agoMinutes: (n: number) => `${n} 分前`,
   agoHours: (n: number) => `${n} 時間前`,
   agoDays: (n: number) => `${n} 日前`,
+
+  runProfileOnlineForeground: (profile: string) =>
+    `✓ profile「${profile}」がオンラインになりました(フォアグラウンド実行中です。Ctrl-C で終了します)`,
+  consoleAlreadyRunningAt: (url: string) => `コントロールプレーンは既に実行中です: ${url}`,
+  consoleAlreadyRunningLocked:
+    'コントロールプレーンは既に実行中です(別の supervisor プロセスがロックを保持しています)。',
+  consoleReady: (url: string) => `✓ コンソール: ${url}`,
+  runProfileOnline: (profile: string) => `✓ profile「${profile}」がオンラインになりました`,
+  activeProfileStartFailed: (profile: string, message: string) =>
+    `⚠️ active profile「${profile}」の起動に失敗しました: ${message}`,
 
   // ── migrate ──
   migrateProfileUpgraded: (profile: string) =>
@@ -695,6 +913,12 @@ export const cliJa: typeof cliZh = {
   psAgoHours: (n: number) => `${n}h 前`,
   psAgoDays: (n: number) => `${n}d 前`,
 
+  killServiceManaged: (id: string, pid: number, platformName: string) =>
+    `✗ bot ${id} (pid ${pid}) は ${platformName} が管理しているため、SIGTERM で停止してもサービスマネージャーがすぐに再起動します。`,
+  killServiceStopHint: (hint: string) => `  停止する場合:   ${hint}`,
+  killServiceRestartHint: (hint: string) => `  再起動する場合: ${hint}`,
+  killDidNotExit: (pid: number) => `プロセス ${pid} が SIGKILL 後も終了しませんでした`,
+
   // ── secrets ──
   secretsSetUsage: '使い方: lark-channel-bridge secrets set --app-id <id>',
   secretsCancelledEmpty: '✗ キャンセルしました(secret が空です)',
@@ -714,6 +938,52 @@ export const cliJa: typeof cliZh = {
     `profile をアーカイブしました: ${name} -> ${archivedTo}`,
   profileExported: (name: string, output: string) =>
     `profile をエクスポートしました: ${name} -> ${output}`,
+
+  profileNotFound: (name: string) => `profile が見つかりません: ${name}`,
+  profileAlreadyExists: (name: string) => `profile は既に存在します: ${name}`,
+  profileAgentKindMismatch: (name: string, existing: string, requested: string) =>
+    `profile ${name} は agentKind ${existing} で既に存在しますが、profile create で --agent ${requested} が指定されました。` +
+    `profile 名はラベルにすぎません。既存の ${existing} profile を使うか、別の名前を選ぶか、` +
+    `profile ${name} を削除してから ${requested} profile を作成してください。`,
+  profilePurgeRequiresYes: 'profile remove --purge には --yes も指定してください',
+  configNotInitialized: '設定がまだ初期化されていません',
+  activeProfileNotFound: (name: string) =>
+    `active profile が見つかりません: ${name}。profile use <name> を実行して修復してください`,
+  profileLocked: (name: string, pid: number | undefined) =>
+    `profile はロック中または実行中です: ${name}${pid === undefined ? '' : ` pid=${pid}`}`,
+  profileRemoveRestoreFailed: (p: { name: string; archivedTo: string | undefined; restoreError: string; rootError: string }) =>
+    `${p.name} の移動後に profile の削除に失敗しました。現在の状態は ${p.archivedTo} にあります。` +
+    `復元にも失敗しました: ${p.restoreError}。root config のエラー: ${p.rootError}`,
+  profileExportSecretsRequiresYes: 'profile export --include-secrets には --yes も指定してください',
+  profileExportOutputExists: '出力先のファイルが既に存在します。上書きするには --force を指定してください',
+
+  // ── ui (open the web console) ──
+  uiOpening: (url: string) => `コンソールを開きます: ${url}`,
+  uiNotRunning: [
+    '実行中のコントロールプレーンが見つかりません。',
+    '',
+    'コンソールには supervisor モード(--web-ui)が必要です:',
+    '  lark-channel-bridge run --web-ui        # supervisor とコンソールをフォアグラウンドで実行',
+    '  lark-channel-bridge start --web-ui      # supervisor とコンソールをバックグラウンドサービスとして実行',
+    '',
+    '(--web-ui を付けない run/start は、単一の profile を UI なしで実行します。ブラウザのない環境向けです。)',
+    '',
+    '起動後、もう一度 `lark-channel-bridge ui` を実行してコンソールを開いてください。',
+  ].join('\n'),
+  uiOpenManually: 'ブラウザが自動で開かない場合は、上の URL に手動でアクセスしてください。',
+  uiCannotOpenBrowser: 'ブラウザを自動で開けませんでした。上の URL に手動でアクセスしてください。',
+
+  // ── send-card ──
+  sendCardChatIdRequired: '--chat-id を指定してください',
+  sendCardFileRequired: '--file を指定してください',
+  sendCardTtlInvalid: '--ttl-minutes には正の数を指定してください',
+
+  // ── supervisor (in-process profile hosting) ──
+  supervisorProfileIncomplete: (profile: string) => `profile の設定が不完全です: ${profile}`,
+  supervisorAppAlreadyConnected: (profile: string) =>
+    `この Feishu アプリは既に profile「${profile}」で接続されているため、重複してオンラインにできません`,
+  supervisorProfileNotRunning: (profile: string) => `profile は実行されていません: ${profile}`,
+  supervisorConfigIncompleteAfterChange: '設定の変更後、profile の設定が不完全です',
 
   // ── registration wizard ──
   wizardIntro: '\nFeishu アプリの設定が見つからないため、QR コード作成ウィザードを開始します。\n',

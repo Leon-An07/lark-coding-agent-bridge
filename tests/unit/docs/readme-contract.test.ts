@@ -1,3 +1,4 @@
+import { enUS } from '../../../src/i18n/index.js';
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
@@ -39,8 +40,8 @@ describe('README runtime contract', () => {
     ]);
 
     expect(cli).toContain('--workspace <path>');
-    expect(cli).toContain('profile name (defaults to active profile)');
-    expect(cli).toContain('Archive a profile and its local state');
+    expect(enUS.help.optProfileDefault).toBe('profile name (defaults to active profile)');
+    expect(enUS.help.profileRemove).toBe('Archive a profile and its local state');
     expect(help).not.toContain('/doc ws');
     expect(configCard).not.toContain('`/doc`');
   });

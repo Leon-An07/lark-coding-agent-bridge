@@ -165,6 +165,75 @@ export const commandsZh = {
   configFailRolledBack: '保存失败，lark-cli 身份策略已回滚。请重新打开 /config 确认当前状态。',
   configFailPolicyNotApplied: 'lark-cli 身份策略未生效，未做任何修改。',
   configFailNotWritten: '配置未写入，未做任何修改。',
+
+  // ── /meeting ──
+  meetingDisabled:
+    '会议智能体未启用。在 `/config` 或 Web 控制台里开启「会议智能体」后重启 bot 即可。',
+  meetingNotReady: '会议能力未就绪（channel 未连接或启用后尚未重启）。',
+  meetingJoinUsage: '用法：`/meeting join <9位会议号>`（只接受 9 位纯数字，不是会议链接）',
+  meetingJoined: (topic: string, meetingNo: string, trigger: string) =>
+    `✅ 已入会 **${topic}**\n` +
+    `会议号 ${meetingNo} · 会中发 \`${trigger} 你的问题\` 可以问我\n` +
+    '`/meeting notes` 总结 · `/meeting leave` 离会',
+  meetingJoinFailed: (detail: string) => `入会失败：${detail}`,
+  meetingLeft: (meetingNo: string) => `✅ 已离会（会议号 ${meetingNo}）`,
+  meetingTranscriptEmpty:
+    '字幕缓冲为空 —— agent 这次拿到的会议上下文是「（暂无字幕）」。\n' +
+    '注意：同一场会里 agent 复用一个会话，**早先轮次**的字幕仍留在它自己的对话历史里，' +
+    '所以它可能引用缓冲里已经没有的内容。`/new` 可以清掉该会话记忆。',
+  meetingTranscriptHeader: (total: number, shown: number) =>
+    `字幕缓冲共 ${total} 条${shown < total ? `，以下是最近 ${shown} 条` : ''}：`,
+  meetingStopped: '✅ 已中断该会议的当前任务。',
+  meetingNothingToStop: '该会议当前没有正在执行的任务。',
+  meetingAskUsage: '用法：`/meeting ask <问题>`',
+  meetingNoExecutor: '当前上下文无法执行 agent（缺少 run executor）。',
+  meetingSummarizing: '正在总结会议…',
+  meetingThinking: '正在思考…',
+  meetingNoAnswer: '（没有产生回答）',
+  meetingRunFailed: (detail: string) => `执行失败：${detail}`,
+  meetingHelp:
+    '用法：\n' +
+    '`/meeting` — 状态\n' +
+    '`/meeting join <9位会议号>` — 让 bot 入会\n' +
+    '`/meeting leave [会议号]` — 离会\n' +
+    '`/meeting notes [会议号]` — 基于字幕做纪要（只发给你）\n' +
+    '`/meeting stop [会议号]` — 中断该会议卡住的任务\n' +
+    '`/meeting transcript [会议号]` — 看 agent 实际拿到的字幕上下文\n' +
+    '`/meeting ask <问题>` — 带会议上下文提问',
+  meetingNotFound: (meetingNo: string) =>
+    `没找到会议号 ${meetingNo} 对应的会议。用 \`/meeting\` 看当前在跟哪几场。`,
+  meetingNoneActive: '当前没有在跟的会议。先 `/meeting join <9位会议号>`。',
+  meetingPickOne: (count: number, list: string, exampleNo: string) =>
+    `当前在跟 ${count} 场会议，请指定会议号：\n${list}\n\n例如 \`/meeting notes ${exampleNo}\``,
+  meetingPushHooked: (received: number) =>
+    `推送：已挂载，累计收到 ${received} 条${received === 0 ? '（尚未收到，可能还没在后台订阅 vc.bot.* 事件）' : ''}`,
+  meetingPushUnhooked: (reason: string) => `推送：未挂载（${reason}），仅靠轮询`,
+  meetingUnknownReason: '未知原因',
+  meetingStatusNone: (pushLine: string) =>
+    `当前没有在跟的会议。\n${pushLine}\n\n\`/meeting join <9位会议号>\` 开始。`,
+  meetingStatusHeader: (count: number) => `正在跟 ${count} 场会议：`,
+  meetingStatusLine: (
+    title: string,
+    meetingNo: string,
+    viaPush: boolean,
+    transcriptLines: number,
+    participants: number,
+  ) =>
+    `- **${title}**（${meetingNo}）· 来源 ${viaPush ? '推送' : '轮询'}` +
+    ` · 字幕 ${transcriptLines} 条 · 参会 ${participants} 人`,
+  // in-meeting chat lane + end-of-meeting summary (meeting/orchestrator.ts)
+  meetingLaneStopped: '已中断当前任务。',
+  meetingLaneNothingToStop: '当前没有正在执行的任务。',
+  meetingLaneBusy: (prefix: string) =>
+    `上一个任务还在执行。发「${prefix} stop」可以中断它，然后再问我。`,
+  meetingSummaryTitle: (title: string) => `**会议纪要 · ${title}**`,
+  // meeting/manager.ts, meeting/api.ts
+  meetingPushNoRawEvent:
+    'channel 不支持 onRawEvent（需要 @larksuite/channel >= 0.5.0），已降级为轮询',
+  meetingPushHookFailed: (err: string) => `注册事件失败：${err}`,
+  meetingNotInGray: '智能体入会能力尚未对本应用开通（错误码 20017）。需要先申请加入内测，再重试。',
+  meetingNoInvalid: (raw: string) => `会议号必须是 9 位数字：${raw}`,
+  meetingJoinNoId: '入会成功但未返回 meeting.id',
 };
 
 export const commandsEn: typeof commandsZh = {
@@ -341,6 +410,78 @@ export const commandsEn: typeof commandsZh = {
     'Save failed; the lark-cli identity policy was rolled back. Reopen /config to confirm the current state.',
   configFailPolicyNotApplied: 'lark-cli identity policy not applied; nothing was changed.',
   configFailNotWritten: 'Config not written; nothing was changed.',
+
+  // ── /meeting ──
+  meetingDisabled:
+    'The meeting agent is not enabled. Turn on "Meeting agent" in `/config` or the Web console, then restart the bot.',
+  meetingNotReady:
+    'Meeting features are not ready (the channel is not connected, or the bot has not restarted since enabling them).',
+  meetingJoinUsage:
+    'Usage: `/meeting join <9-digit meeting number>` (9 digits only, not a meeting link)',
+  meetingJoined: (topic: string, meetingNo: string, trigger: string) =>
+    `✅ Joined **${topic}**\n` +
+    `Meeting number ${meetingNo} · send \`${trigger} your question\` in the meeting chat to ask me\n` +
+    '`/meeting notes` to summarize · `/meeting leave` to leave',
+  meetingJoinFailed: (detail: string) => `Failed to join the meeting: ${detail}`,
+  meetingLeft: (meetingNo: string) => `✅ Left the meeting (meeting number ${meetingNo})`,
+  meetingTranscriptEmpty:
+    'The caption buffer is empty, so the agent got "(no captions yet)" as meeting context this time.\n' +
+    'Note: the agent reuses one session per meeting, so captions from **earlier turns** stay in its own conversation history ' +
+    'and it may quote content that is no longer in the buffer. `/new` clears that session memory.',
+  meetingTranscriptHeader: (total: number, shown: number) =>
+    `${total} lines in the caption buffer${shown < total ? `; the latest ${shown} are below` : ''}:`,
+  meetingStopped: "✅ Stopped this meeting's current task.",
+  meetingNothingToStop: 'This meeting has no task running.',
+  meetingAskUsage: 'Usage: `/meeting ask <question>`',
+  meetingNoExecutor: 'Cannot run the agent in this context (no run executor).',
+  meetingSummarizing: 'Summarizing the meeting…',
+  meetingThinking: 'Thinking…',
+  meetingNoAnswer: '(No answer was produced)',
+  meetingRunFailed: (detail: string) => `Run failed: ${detail}`,
+  meetingHelp:
+    'Usage:\n' +
+    '`/meeting` — status\n' +
+    '`/meeting join <9-digit meeting number>` — have the bot join\n' +
+    '`/meeting leave [meeting number]` — leave\n' +
+    '`/meeting notes [meeting number]` — summarize from the captions (sent only to you)\n' +
+    "`/meeting stop [meeting number]` — stop the meeting's stuck task\n" +
+    '`/meeting transcript [meeting number]` — show the caption context the agent actually gets\n' +
+    '`/meeting ask <question>` — ask with the meeting as context',
+  meetingNotFound: (meetingNo: string) =>
+    `No meeting found with number ${meetingNo}. Send \`/meeting\` to see which meetings are being followed.`,
+  meetingNoneActive: 'No meeting is being followed. Start with `/meeting join <9-digit meeting number>`.',
+  meetingPickOne: (count: number, list: string, exampleNo: string) =>
+    `Following ${count} meetings. Specify a meeting number:\n${list}\n\nFor example \`/meeting notes ${exampleNo}\``,
+  meetingPushHooked: (received: number) =>
+    `Push: attached, ${received} events received${received === 0 ? ' (none yet; the vc.bot.* events may not be subscribed in the developer console)' : ''}`,
+  meetingPushUnhooked: (reason: string) => `Push: not attached (${reason}); polling only`,
+  meetingUnknownReason: 'unknown reason',
+  meetingStatusNone: (pushLine: string) =>
+    `No meeting is being followed.\n${pushLine}\n\nStart with \`/meeting join <9-digit meeting number>\`.`,
+  meetingStatusHeader: (count: number) => `Following ${count} meetings:`,
+  meetingStatusLine: (
+    title: string,
+    meetingNo: string,
+    viaPush: boolean,
+    transcriptLines: number,
+    participants: number,
+  ) =>
+    `- **${title}** (${meetingNo}) · source ${viaPush ? 'push' : 'polling'}` +
+    ` · ${transcriptLines} caption lines · ${participants} participants`,
+  // in-meeting chat lane + end-of-meeting summary (meeting/orchestrator.ts)
+  meetingLaneStopped: 'Stopped the current task.',
+  meetingLaneNothingToStop: 'No task is running.',
+  meetingLaneBusy: (prefix: string) =>
+    `The previous task is still running. Send "${prefix} stop" to stop it, then ask again.`,
+  meetingSummaryTitle: (title: string) => `**Meeting notes · ${title}**`,
+  // meeting/manager.ts, meeting/api.ts
+  meetingPushNoRawEvent:
+    'the channel does not support onRawEvent (needs @larksuite/channel >= 0.5.0); fell back to polling',
+  meetingPushHookFailed: (err: string) => `failed to register events: ${err}`,
+  meetingNotInGray:
+    'Meeting join for agents is not enabled for this app yet (error code 20017). Apply to join the beta first, then try again.',
+  meetingNoInvalid: (raw: string) => `The meeting number must be 9 digits: ${raw}`,
+  meetingJoinNoId: 'Joined the meeting, but no meeting.id was returned',
 };
 
 export const commandsJa: typeof commandsZh = {
@@ -514,4 +655,76 @@ export const commandsJa: typeof commandsZh = {
     '保存に失敗したため、lark-cli アイデンティティポリシーをロールバックしました。/config を開き直して現在の状態を確認してください。',
   configFailPolicyNotApplied: 'lark-cli アイデンティティポリシーが適用されなかったため、何も変更していません。',
   configFailNotWritten: '設定は書き込まれず、何も変更していません。',
+
+  // ── /meeting ──
+  meetingDisabled:
+    '会議エージェントが有効になっていません。`/config` または Web コンソールで「会議エージェント」を有効にしてから、bot を再起動してください。',
+  meetingNotReady:
+    '会議機能の準備ができていません（channel が未接続か、有効化した後に再起動していません）。',
+  meetingJoinUsage:
+    '使い方：`/meeting join <9 桁の会議 ID>`（9 桁の数字のみ。会議リンクは使えません）',
+  meetingJoined: (topic: string, meetingNo: string, trigger: string) =>
+    `✅ **${topic}** に参加しました\n` +
+    `会議 ID ${meetingNo} · 会議チャットで \`${trigger} 質問内容\` を送ると質問できます\n` +
+    '`/meeting notes` で要約 · `/meeting leave` で退出',
+  meetingJoinFailed: (detail: string) => `会議への参加に失敗しました：${detail}`,
+  meetingLeft: (meetingNo: string) => `✅ 会議から退出しました（会議 ID ${meetingNo}）`,
+  meetingTranscriptEmpty:
+    '字幕バッファが空です。今回 agent に渡された会議コンテキストは「（字幕はまだありません）」でした。\n' +
+    '注意：同じ会議では agent が 1 つのセッションを使い回すため、**以前のターン**の字幕は agent 自身の会話履歴に残っています。' +
+    'そのため、バッファにはもうない内容を引用することがあります。`/new` でそのセッションの記憶を消去できます。',
+  meetingTranscriptHeader: (total: number, shown: number) =>
+    `字幕バッファは全 ${total} 件です${shown < total ? `。以下は最新の ${shown} 件です` : ''}：`,
+  meetingStopped: '✅ この会議で実行中のタスクを中断しました。',
+  meetingNothingToStop: 'この会議で実行中のタスクはありません。',
+  meetingAskUsage: '使い方：`/meeting ask <質問>`',
+  meetingNoExecutor: 'このコンテキストでは agent を実行できません（run executor がありません）。',
+  meetingSummarizing: '会議を要約しています…',
+  meetingThinking: '考えています…',
+  meetingNoAnswer: '（回答はありませんでした）',
+  meetingRunFailed: (detail: string) => `実行に失敗しました：${detail}`,
+  meetingHelp:
+    '使い方：\n' +
+    '`/meeting` — 状態を表示\n' +
+    '`/meeting join <9 桁の会議 ID>` — bot を会議に参加させる\n' +
+    '`/meeting leave [会議 ID]` — 退出する\n' +
+    '`/meeting notes [会議 ID]` — 字幕から議事録を作成（あなたにだけ送信）\n' +
+    '`/meeting stop [会議 ID]` — その会議で止まっているタスクを中断する\n' +
+    '`/meeting transcript [会議 ID]` — agent が実際に受け取る字幕コンテキストを表示\n' +
+    '`/meeting ask <質問>` — 会議の内容を踏まえて質問する',
+  meetingNotFound: (meetingNo: string) =>
+    `会議 ID ${meetingNo} の会議が見つかりません。\`/meeting\` で追跡中の会議を確認してください。`,
+  meetingNoneActive: '追跡中の会議はありません。まず `/meeting join <9 桁の会議 ID>` を送ってください。',
+  meetingPickOne: (count: number, list: string, exampleNo: string) =>
+    `${count} 件の会議を追跡中です。会議 ID を指定してください：\n${list}\n\n例：\`/meeting notes ${exampleNo}\``,
+  meetingPushHooked: (received: number) =>
+    `プッシュ：接続済み、受信 ${received} 件${received === 0 ? '（まだ受信していません。開発者コンソールで vc.bot.* イベントを購読していない可能性があります）' : ''}`,
+  meetingPushUnhooked: (reason: string) => `プッシュ：未接続（${reason}）。ポーリングのみで動作しています`,
+  meetingUnknownReason: '原因不明',
+  meetingStatusNone: (pushLine: string) =>
+    `追跡中の会議はありません。\n${pushLine}\n\n\`/meeting join <9 桁の会議 ID>\` で開始できます。`,
+  meetingStatusHeader: (count: number) => `${count} 件の会議を追跡中です：`,
+  meetingStatusLine: (
+    title: string,
+    meetingNo: string,
+    viaPush: boolean,
+    transcriptLines: number,
+    participants: number,
+  ) =>
+    `- **${title}**（${meetingNo}）· 取得元 ${viaPush ? 'プッシュ' : 'ポーリング'}` +
+    ` · 字幕 ${transcriptLines} 件 · 参加者 ${participants} 人`,
+  // in-meeting chat lane + end-of-meeting summary (meeting/orchestrator.ts)
+  meetingLaneStopped: '実行中のタスクを中断しました。',
+  meetingLaneNothingToStop: '実行中のタスクはありません。',
+  meetingLaneBusy: (prefix: string) =>
+    `前のタスクがまだ実行中です。「${prefix} stop」を送ると中断できます。その後でもう一度質問してください。`,
+  meetingSummaryTitle: (title: string) => `**議事録 · ${title}**`,
+  // meeting/manager.ts, meeting/api.ts
+  meetingPushNoRawEvent:
+    'channel が onRawEvent に対応していません（@larksuite/channel >= 0.5.0 が必要）。ポーリングに切り替えました',
+  meetingPushHookFailed: (err: string) => `イベントの登録に失敗しました：${err}`,
+  meetingNotInGray:
+    'このアプリでは、エージェントの会議参加機能がまだ有効になっていません（エラーコード 20017）。ベータ版への参加を申請してから、もう一度お試しください。',
+  meetingNoInvalid: (raw: string) => `会議 ID は 9 桁の数字で指定してください：${raw}`,
+  meetingJoinNoId: '会議には参加しましたが、meeting.id が返されませんでした',
 };

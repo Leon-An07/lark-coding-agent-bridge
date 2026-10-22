@@ -106,6 +106,20 @@ export const cardsZh = {
     '_允许用户身份:保留应用身份,并允许已授权用户访问个人日历、邮箱、云盘等资源_',
   optIdentityBot: '只允许应用身份',
   optIdentityUser: '允许用户身份',
+
+  consoleLink: (url: string) =>
+    '🖥️ **Web 控制台**（本机 127.0.0.1，可管理所有 profile 的启动/停止与配置）\n' +
+    `[${url}](${url})`,
+  deployModeHeading:
+    '**运行模式**\n' +
+    '_个人版(默认):Bot 是你一个人的助手,只有你和白名单用户能用,可携带你的个人授权访问文档/日历等_\n' +
+    '_团队版:Bot 是团队共用的助手,任何人 @ 即可使用(不做白名单校验);为避免他人借 Bot 动用你的个人权限,此模式下 CLI 强制只用应用(bot)身份,不使用个人授权_',
+  optDeployPersonal: '个人版(默认)',
+  optDeployTeam: '团队版',
+  teamAccessNote:
+    '_⚠️ **团队版已开启**：访问控制暂不生效 —— 任何人 @ bot 都能使用（管理命令仍限 owner/管理员）。切回个人版后以下白名单恢复生效。_',
+  teamIdentityOverrideNote:
+    '\n\n_⚠️ 团队版已开启：本项被覆盖 —— 身份强制为「只允许应用身份」、访问控制不生效。切回个人版后恢复。_',
   languageHeading: '\n**语言 / Language**\n_影响 bot 回复、卡片与命令输出的语言_',
   langOptionZh: '中文',
   langOptionEn: 'English',
@@ -400,6 +414,20 @@ export const cardsEn: typeof cardsZh = {
     '_Allow user identity: keeps the app identity and lets authorized users access personal calendar, mail, drive, etc._',
   optIdentityBot: 'App identity only',
   optIdentityUser: 'Allow user identity',
+
+  consoleLink: (url: string) =>
+    '🖥️ **Web console** (this machine, 127.0.0.1; start/stop and configure every profile)\n' +
+    `[${url}](${url})`,
+  deployModeHeading:
+    '**Run mode**\n' +
+    '_Personal (default): the bot is your own assistant. Only you and allowlisted users can use it, and it can use your personal authorization for docs, calendar, etc._\n' +
+    '_Team: the bot is shared by the team. Anyone can @ it (no allowlist check). So others cannot use your personal permissions through it, the CLI is forced to the app (bot) identity only and never uses personal authorization._',
+  optDeployPersonal: 'Personal (default)',
+  optDeployTeam: 'Team',
+  teamAccessNote:
+    '_⚠️ **Team mode is on**: access control is not enforced; anyone who @-mentions the bot can use it (admin commands are still limited to the owner/admins). The allowlists below apply again after switching back to personal mode._',
+  teamIdentityOverrideNote:
+    '\n\n_⚠️ Team mode is on: this setting is overridden. The identity is forced to "App identity only" and access control is not enforced. It is restored after switching back to personal mode._',
   languageHeading: '\n**Language**\n_Language for bot replies, cards and command output_',
   langOptionZh: '中文',
   langOptionEn: 'English',
@@ -694,6 +722,20 @@ export const cardsJa: typeof cardsZh = {
     '_ユーザーのアイデンティティを許可:アプリのアイデンティティを保持しつつ、認可済みユーザーの個人カレンダー・メール・ドライブなどへのアクセスを許可します_',
   optIdentityBot: 'アプリのアイデンティティのみ',
   optIdentityUser: 'ユーザーのアイデンティティを許可',
+
+  consoleLink: (url: string) =>
+    '🖥️ **Web コンソール**（このマシンの 127.0.0.1。すべての profile の起動・停止と設定を管理できます）\n' +
+    `[${url}](${url})`,
+  deployModeHeading:
+    '**動作モード**\n' +
+    '_個人版(デフォルト):Bot はあなた専用のアシスタントです。あなたと許可リストのユーザーだけが使え、あなたの個人認可でドキュメントやカレンダーなどにアクセスできます_\n' +
+    '_チーム版:Bot はチームで共有するアシスタントです。誰でも @ するだけで使えます(許可リストの確認なし)。他の人が Bot 経由であなたの個人権限を使えないように、このモードでは CLI はアプリ(bot)のアイデンティティのみを使い、個人認可は使いません_',
+  optDeployPersonal: '個人版(デフォルト)',
+  optDeployTeam: 'チーム版',
+  teamAccessNote:
+    '_⚠️ **チーム版が有効です**：アクセス制御は現在無効です。誰でも bot を @ すれば使えます（管理コマンドは引き続き owner/管理者のみ）。個人版に戻すと、以下の許可リストが再び有効になります。_',
+  teamIdentityOverrideNote:
+    '\n\n_⚠️ チーム版が有効です：この項目は上書きされています。アイデンティティは「アプリのアイデンティティのみ」に固定され、アクセス制御は無効です。個人版に戻すと元に戻ります。_',
   languageHeading: '\n**言語 / Language**\n_bot の返信、カード、コマンド出力の言語に影響します_',
   langOptionZh: '中文',
   langOptionEn: 'English',

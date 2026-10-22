@@ -2,6 +2,7 @@ import { resolveAppPaths } from '../config/app-paths';
 import { buildLarkChannelEnv } from '../agent/lark-channel-env';
 import { mergeProcessEnv, spawnProcess } from '../platform/spawn';
 import { log } from '../core/logger';
+import { msgs } from '../i18n';
 
 /**
  * User-identity IM helpers that drive the bridge's managed `lark-cli` under a
@@ -220,8 +221,9 @@ export async function startDeviceLogin(
   const deviceCode = pickString(json, ['device_code', 'deviceCode']) ?? findString(json, /device.?code/i) ?? '';
   const userCode = pickString(json, ['user_code', 'userCode']) ?? findString(json, /user.?code/i);
   if (!verificationUrl || !deviceCode) {
+    const m = msgs().setup;
     throw new Error(
-      `无法开始授权：${r.stderr.trim() || r.stdout.trim() || 'lark-cli auth login 未返回验证链接'}`,
+      m.errorWithDetail(m.authStartFailed, r.stderr.trim() || r.stdout.trim() || m.authNoVerificationUrl),
     );
   }
   const expiresIn =
@@ -248,8 +250,8 @@ export async function completeDeviceLogin(
   const json = parseJson(r.stdout);
   const message =
     findString(json, /message|error|reason/i) ??
-    r.stderr.trim() ??
-    '授权尚未完成，请先在浏览器里确认授权后重试';
+    (r.stderr.trim() ||
+    msgs().setup.authNotCompleted);
   return { ok: false, message };
 }
 
@@ -263,11 +265,12 @@ const DEFAULT_PAGE_SIZE = 8;
 
 function toChats(items: unknown[]): UserChat[] {
   const chats: UserChat[] = [];
+  const unnamed = msgs().setup.unnamedChat;
   for (const it of items) {
     if (!isRecord(it)) continue;
     const id = typeof it.chat_id === 'string' ? it.chat_id : typeof it.id === 'string' ? it.id : '';
     if (!id) continue;
-    const name = typeof it.name === 'string' && it.name.trim() ? it.name : '(无名群)';
+    const name = typeof it.name === 'string' && it.name.trim() ? it.name : unnamed;
     chats.push({ id, name });
   }
   return chats;
@@ -307,7 +310,7 @@ export async function listUserChats(
     String(opts.pageSize ?? DEFAULT_PAGE_SIZE),
   ];
   if (opts.pageToken) args.push('--page-token', opts.pageToken);
-  return parseChatsPage(await exec(args, larkCliEnv(ctx), 30_000), '列出群失败');
+  return parseChatsPage(await exec(args, larkCliEnv(ctx), 30_000), msgs().setup.listChatsFailed);
 }
 
 /** Search the user's visible groups by name (one page). */
@@ -328,7 +331,7 @@ export async function searchUserChats(
     String(opts.pageSize ?? DEFAULT_PAGE_SIZE),
   ];
   if (opts.pageToken) args.push('--page-token', opts.pageToken);
-  return parseChatsPage(await exec(args, larkCliEnv(ctx), 30_000), '搜索群失败');
+  return parseChatsPage(await exec(args, larkCliEnv(ctx), 30_000), msgs().setup.searchChatsFailed);
 }
 
 export async function addBotToChat(
@@ -363,20 +366,21 @@ export async function addBotToChat(
   const inList = (arr: unknown[]) =>
     arr.some((x) => (typeof x === 'string' ? x === botAppId : isRecord(x) && x.id === botAppId));
 
+  const m = msgs().setup;
   if (r.code === 0 && (inList(invalid) || inList(notExisted))) {
     // The API succeeded but rejected the bot id — usually the app isn't
     // available to this tenant/group, or lacks the add-member scope.
     return {
       ok: false,
       pending: false,
-      message: '把 bot 拉进群失败：应用对该群不可用，或缺少 im:chat 权限（去开发者后台确认应用可见范围与权限）',
+      message: m.errorWithDetail(m.addBotFailed, m.addBotUnavailable),
     };
   }
   if (r.code !== 0) {
-    return { ok: false, pending: false, message: cliError(r, '把 bot 拉进群失败') };
+    return { ok: false, pending: false, message: cliError(r, m.addBotFailed) };
   }
   if (inList(pendingList) || pendingList.length > 0) {
-    return { ok: true, pending: true, message: '已发送，等待群主/管理员通过' };
+    return { ok: true, pending: true, message: m.addBotPending };
   }
   return { ok: true, pending: false };
 }
@@ -402,13 +406,14 @@ function extractArray(v: unknown): unknown[] {
 }
 
 function cliError(r: ExecResult, prefix: string): string {
-  if (r.timedOut) return `${prefix}：命令超时`;
+  const m = msgs().setup;
+  if (r.timedOut) return m.errorWithDetail(prefix, m.commandTimedOut);
   // lark-cli's error JSON can land on stdout OR stderr; parse whichever has it
   // and pull the nested error message rather than dumping the raw blob.
   const json = parseJson(r.stdout) ?? parseJson(r.stderr);
   const firstLine = (s: string): string | undefined => s.trim().split('\n')[0]?.trim() || undefined;
   const detail =
-    findString(json, /message|reason/i) ?? firstLine(r.stderr) ?? firstLine(r.stdout) ?? `退出码 ${r.code}`;
+    findString(json, /message|reason/i) ?? firstLine(r.stderr) ?? firstLine(r.stdout) ?? m.exitCode(r.code);
   log.warn('user-im', 'lark-cli-error', { detail });
-  return `${prefix}：${detail}`;
+  return m.errorWithDetail(prefix, detail);
 }

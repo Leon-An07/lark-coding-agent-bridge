@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveAppPaths } from '../../../src/config/app-paths';
+import { msgs } from '../../../src/i18n';
 import { clearKeystoreDerivedKeyCache, setSecret } from '../../../src/config/keystore';
 import {
   createDefaultProfileConfig,
@@ -53,7 +54,9 @@ describe('profile retention and export', () => {
     const appPaths = resolveAppPaths({ rootDir: root, profile: 'codex-dev' });
 
     await withProfileAndAppLocks(appPaths, 'cli_codex_dev', 'codex', async () => {
-      await expect(runProfileRemove('codex-dev', { rootDir: root })).rejects.toThrow(/locked|running/i);
+      await expect(runProfileRemove('codex-dev', { rootDir: root })).rejects.toThrow(
+        msgs().cli.profileLocked('codex-dev', process.pid),
+      );
     });
 
     await expect(stat(join(root, 'profiles', 'codex-dev'))).resolves.toBeDefined();
@@ -105,7 +108,7 @@ describe('profile retention and export', () => {
     await writeFile(join(root, 'active-profile'), 'missing\n', 'utf8');
 
     await expect(runProfileRemove('codex-dev', { rootDir: root })).rejects.toThrow(
-      /active profile not found: missing/,
+      msgs().cli.activeProfileNotFound('missing'),
     );
   });
 

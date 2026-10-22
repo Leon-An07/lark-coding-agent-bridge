@@ -9,6 +9,7 @@ import {
   saveRootConfig,
 } from '../../../src/config/profile-store';
 import { Supervisor } from '../../../src/runtime/supervisor';
+import { msgs } from '../../../src/i18n';
 
 const roots: string[] = [];
 const started: string[] = [];
@@ -87,7 +88,7 @@ describe('Supervisor', () => {
 
   it('refuses to bring up two profiles sharing one app id', async () => {
     await sup.startProfile('work'); // cli_b
-    await expect(sup.startProfile('dup')).rejects.toThrow(/已被 profile/);
+    await expect(sup.startProfile('dup')).rejects.toThrow(msgs().cli.supervisorAppAlreadyConnected('work'));
     expect(sup.isOnline('dup')).toBe(false);
   });
 

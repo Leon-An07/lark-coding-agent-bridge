@@ -10,6 +10,7 @@ import {
 } from '../../card/managed';
 import { resolveAppSecret } from '../../config/secret-resolver';
 import { resolveProfileRuntime } from '../../runtime/profile-runtime';
+import { msgs } from '../../i18n';
 
 const DEFAULT_TTL_MINUTES = 60;
 
@@ -95,8 +96,8 @@ async function prepareSignedCardWithRuntime(
   opts: CardCommandOptions,
   runtime: Awaited<ReturnType<typeof resolveProfileRuntime>>,
 ): Promise<PreparedCard> {
-  if (!opts.chatId) throw new Error('--chat-id is required');
-  if (!opts.file) throw new Error('--file is required');
+  if (!opts.chatId) throw new Error(msgs().cli.sendCardChatIdRequired);
+  if (!opts.file) throw new Error(msgs().cli.sendCardFileRequired);
   const ttlMs = parseTtlMs(opts.ttlMinutes);
   const card = JSON.parse(await readFile(opts.file, 'utf8')) as unknown;
   const appSecret = await resolveAppSecret(runtime.cfg, runtime.appPaths);
@@ -130,7 +131,7 @@ function parseTtlMs(raw: string | undefined): number {
   if (raw === undefined || raw.trim() === '') return DEFAULT_TTL_MINUTES * 60_000;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) {
-    throw new Error('--ttl-minutes must be a positive number');
+    throw new Error(msgs().cli.sendCardTtlInvalid);
   }
   return Math.round(n * 60_000);
 }

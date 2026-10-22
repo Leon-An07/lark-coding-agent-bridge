@@ -86,19 +86,11 @@ function mentionOverrideList(overrides: Record<string, boolean>, knownChats: Kno
 /** Form card for `/config`. */
 export function configFormCard(opts: ConfigFormOpts): object {
   const m = msgs().cards;
-  // TODO(i18n): upstream's team-mode strings are still hardcoded zh — same
-  // deferral policy as the 2026-07-10 merge; translate in a follow-up pass.
   const teamMode = opts.mode === 'team';
-  const teamOverrideNote =
-    '\n\n_⚠️ 团队版已开启：本项被覆盖 —— 身份强制为「只允许应用身份」、访问控制不生效。切回个人版后恢复。_';
   const accessElements: object[] = [
     ...(teamMode
       ? [
-          {
-            tag: 'markdown',
-            content:
-              '_⚠️ **团队版已开启**：访问控制暂不生效 —— 任何人 @ bot 都能使用（管理命令仍限 owner/管理员）。切回个人版后以下白名单恢复生效。_',
-          },
+          { tag: 'markdown', content: m.teamAccessNote },
           { tag: 'hr' },
         ]
       : []),
@@ -145,12 +137,7 @@ export function configFormCard(opts: ConfigFormOpts): object {
         },
         ...(opts.consoleUrl
           ? [
-              {
-                tag: 'markdown',
-                content:
-                  `🖥️ **Web 控制台**（本机 127.0.0.1，可管理所有 profile 的启动/停止与配置）\n` +
-                  `[${opts.consoleUrl}](${opts.consoleUrl})`,
-              },
+              { tag: 'markdown', content: m.consoleLink(opts.consoleUrl) },
             ]
           : []),
         { tag: 'hr' },
@@ -176,20 +163,14 @@ export function configFormCard(opts: ConfigFormOpts): object {
             //     { text: { tag: 'plain_text', content: m.optCard }, value: 'card' },
             //   ],
             // },
-            {
-              tag: 'markdown',
-              content:
-                '**运行模式**\n' +
-                '_个人版(默认):Bot 是你一个人的助手,只有你和白名单用户能用,可携带你的个人授权访问文档/日历等_\n' +
-                '_团队版:Bot 是团队共用的助手,任何人 @ 即可使用(不做白名单校验);为避免他人借 Bot 动用你的个人权限,此模式下 CLI 强制只用应用(bot)身份,不使用个人授权_',
-            },
+            { tag: 'markdown', content: m.deployModeHeading },
             {
               tag: 'select_static',
               name: 'deploy_mode',
               initial_option: opts.mode,
               options: [
-                { text: { tag: 'plain_text', content: '个人版(默认)' }, value: 'personal' },
-                { text: { tag: 'plain_text', content: '团队版' }, value: 'team' },
+                { text: { tag: 'plain_text', content: m.optDeployPersonal }, value: 'personal' },
+                { text: { tag: 'plain_text', content: m.optDeployTeam }, value: 'team' },
               ],
             },
             { tag: 'hr' },
@@ -293,7 +274,7 @@ export function configFormCard(opts: ConfigFormOpts): object {
             },
             {
               tag: 'markdown',
-              content: m.identityHeading + (teamMode ? teamOverrideNote : ''),
+              content: m.identityHeading + (teamMode ? m.teamIdentityOverrideNote : ''),
             },
             {
               tag: 'select_static',

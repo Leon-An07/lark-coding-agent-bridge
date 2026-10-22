@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServiceAdapter } from '../../../src/daemon/service-adapter';
 import type { ProcessEntry } from '../../../src/runtime/registry';
+import { msgs } from '../../../src/i18n';
 
 const mocks = vi.hoisted(() => ({
   adapter: undefined as unknown as ServiceAdapter,
@@ -487,7 +488,7 @@ describe('profile-aware service commands', () => {
 
     mocks.readActiveProfile.mockResolvedValue(undefined);
     mocks.loadRootConfig.mockResolvedValue(undefined);
-    await expect(runServiceStatus()).rejects.toThrow('active profile is required');
+    await expect(runServiceStatus()).rejects.toThrow(msgs().cli.serviceProfileRequired);
   });
 
   it('falls back to the supervisor service when the active profile has no service of its own', async () => {
@@ -510,8 +511,8 @@ describe('profile-aware service commands', () => {
     // Must act on the supervisor service, not silently no-op on a
     // per-profile service that was never installed.
     expect(supervisor.stopAndDisableAutostart).toHaveBeenCalled();
-    expect(lines.join('\n')).toContain('已指向控制面 supervisor 服务');
-    expect(lines).toContain('✓ 控制面 supervisor 已停止运行');
+    expect(lines).toContain(msgs().cli.serviceProfileFallbackToSupervisor('codex-dev'));
+    expect(lines).toContain(msgs().cli.supervisorStopped);
   });
 
   it('turns off autostart when stopping a registered-but-not-running service', async () => {
@@ -526,7 +527,7 @@ describe('profile-aware service commands', () => {
 
     expect(mocks.adapter.disableAutostart).toHaveBeenCalled();
     expect(mocks.adapter.stopAndDisableAutostart).not.toHaveBeenCalled();
-    expect(lines).toContain('  已关闭开机自启。');
+    expect(lines).toContain(msgs().cli.autostartDisabled);
   });
 
   it('leaves an explicit --profile target alone even when a supervisor service exists', async () => {

@@ -17,6 +17,9 @@ import { cardsZh, cardsEn, cardsJa } from './catalog/cards';
 import { botZh, botEn, botJa } from './catalog/bot';
 import { cliZh, cliEn, cliJa } from './catalog/cli';
 import { policyZh, policyEn, policyJa } from './catalog/policy';
+import { helpZh, helpEn, helpJa } from './catalog/help';
+import { setupZh, setupEn, setupJa } from './catalog/setup';
+import { webZh, webEn, webJa } from './catalog/web';
 
 export type Locale = 'zh-CN' | 'en-US' | 'ja-JP';
 
@@ -33,12 +36,42 @@ export function normalizeLocale(raw: string | undefined | null): Locale | undefi
   return undefined;
 }
 
+/**
+ * The OS user's locale, for when no config preference exists yet (first run,
+ * `--help`). POSIX env vars first (LC_ALL > LC_MESSAGES > LANG, skipping
+ * C/POSIX), then the ICU default, which is how Windows reports it: Windows
+ * sets no LANG, so a Japanese Windows user gets `ja-JP` from Intl.
+ */
+export function detectOsLocale(
+  env: NodeJS.ProcessEnv = process.env,
+  intlLocale: string | undefined = safeIntlLocale(),
+): Locale | undefined {
+  for (const raw of [env.LC_ALL, env.LC_MESSAGES, env.LANG]) {
+    if (!raw || /^(c|posix)([._@]|$)/i.test(raw)) continue;
+    // The first set variable decides, even when it is unsupported (fr_FR):
+    // an unsupported POSIX locale should not fall through to Intl.
+    return normalizeLocale(raw);
+  }
+  return normalizeLocale(intlLocale);
+}
+
+function safeIntlLocale(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().locale;
+  } catch {
+    return undefined;
+  }
+}
+
 export const zhCN = {
   commands: commandsZh,
   cards: cardsZh,
   bot: botZh,
   cli: cliZh,
   policy: policyZh,
+  help: helpZh,
+  setup: setupZh,
+  web: webZh,
 };
 
 export type Messages = typeof zhCN;
@@ -49,6 +82,9 @@ export const enUS: Messages = {
   bot: botEn,
   cli: cliEn,
   policy: policyEn,
+  help: helpEn,
+  setup: setupEn,
+  web: webEn,
 };
 
 export const jaJP: Messages = {
@@ -57,6 +93,9 @@ export const jaJP: Messages = {
   bot: botJa,
   cli: cliJa,
   policy: policyJa,
+  help: helpJa,
+  setup: setupJa,
+  web: webJa,
 };
 
 const catalogs: Record<Locale, Messages> = {

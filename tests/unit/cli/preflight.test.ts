@@ -1,3 +1,4 @@
+import { msgs } from '../../../src/i18n/index.js';
 import { EventEmitter } from 'node:events';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -390,8 +391,8 @@ describe('lark-cli preflight', () => {
     expect(mocks.calls.map((call) => call.args)).toEqual([
       ['config', 'bind', '--source', 'lark-channel', '--identity', 'bot-only'],
     ]);
-    expect(printed).toContain('does not support the lark-channel source');
-    expect(printed).toContain('lark-cli does not support `config bind --source lark-channel`.');
+    expect(printed).toContain(msgs().setup.bindTooOldReason);
+    expect(printed).toContain(msgs().setup.diagnosticNoBindSource);
     expect(printed).not.toContain('Available Commands');
     expect(await readFile(appPaths.configFile, 'utf8')).toBe(originalRoot);
   });

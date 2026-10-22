@@ -1,4 +1,5 @@
 import type { LarkChannel } from '@larksuite/channel';
+import { msgs } from '../i18n';
 import type { AgentEvent } from '../agent/types';
 import { claudeCapability, codexCapability } from '../agent/capability';
 import type { Controls } from '../commands';
@@ -47,7 +48,7 @@ export function meetingScopeId(meetingId: string): string {
  * never exits) would otherwise block every later question with no way out —
  * there is no `/stop` inside a meeting, only the chat lane.
  */
-const STOP_WORDS = new Set(['stop', '停', '停止', '中断', '取消', 'cancel', 'abort']);
+const STOP_WORDS = new Set(['stop', '停', '停止', '中断', '取消', '中止', 'ストップ', 'cancel', 'abort']);
 
 /**
  * Match an in-meeting chat line against the accepted trigger prefixes and
@@ -106,7 +107,7 @@ export function attachMeetingAgent(deps: MeetingAgentDeps): void {
     if (STOP_WORDS.has(question.toLowerCase())) {
       const stopped = deps.activeRuns.interrupt(meetingScopeId(session.meetingId));
       void session
-        .sendMessage(stopped ? '已中断当前任务。' : '当前没有正在执行的任务。')
+        .sendMessage(stopped ? msgs().commands.meetingLaneStopped : msgs().commands.meetingLaneNothingToStop)
         .catch((err) => log.warn('meeting', 'stop-reply-failed', { err: String(err) }));
       return;
     }
@@ -250,7 +251,7 @@ export async function summarizeEndedMeeting(deps: MeetingAgentDeps): Promise<voi
 
   const title = session.topic ?? session.meetingNo;
   await deps.channel
-    .send(target.to, { markdown: `**会议纪要 · ${title}**\n\n${answer}` })
+    .send(target.to, { markdown: `${msgs().commands.meetingSummaryTitle(title)}\n\n${answer}` })
     .catch((err) => log.warn('meeting', 'summary-send-failed', { err: String(err) }));
   log.info('meeting', 'summary-sent', {
     meetingId: session.meetingId,
@@ -340,7 +341,7 @@ async function runMeetingAgent(
         usedPrefix ??
         triggerPrefixes(controls.profileConfig.meeting.trigger, deps.channel.botIdentity?.name)[0] ??
         controls.profileConfig.meeting.trigger;
-      return `上一个任务还在执行。发「${prefix} stop」可以中断它，然后再问我。`;
+      return msgs().commands.meetingLaneBusy(prefix);
     }
     return result.rejectReason.userVisible;
   }

@@ -1,3 +1,4 @@
+import { msgs } from '../i18n';
 import { detectInstalledAgents } from '../cli/agent-detection';
 import { resolveAppPaths } from '../config/app-paths';
 import { setSecret } from '../config/keystore';
@@ -53,9 +54,11 @@ export async function onboardValidate(body: unknown) {
   const appId = String(fv.appId ?? '').trim();
   const appSecret = String(fv.appSecret ?? '').trim();
   const tenant = readTenant(fv.tenant);
-  if (!appId || !appSecret) throw new HttpError(400, 'appId 和 appSecret 必填');
+  if (!appId || !appSecret) throw new HttpError(400, msgs().web.appCredentialsRequired);
   const result = await validateAppCredentials(appId, appSecret, tenant);
-  if (!result.ok) throw new HttpError(400, `凭据校验失败：${result.reason ?? '未知原因'}`);
+  if (!result.ok) {
+    throw new HttpError(400, msgs().web.credentialsInvalid(result.reason ?? msgs().web.unknownReason));
+  }
   return { ok: true, botName: result.botName, botOpenId: result.botOpenId };
 }
 
@@ -86,11 +89,13 @@ export async function onboardCreate(body: unknown, rootDir?: string) {
     tenant: readTenant(fv.tenant),
     ...(typeof fv.workspace === 'string' && fv.workspace.trim() ? { workspace: fv.workspace.trim() } : {}),
   };
-  if (!input.appId || !input.appSecret) throw new HttpError(400, 'appId 和 appSecret 必填');
+  if (!input.appId || !input.appSecret) throw new HttpError(400, msgs().web.appCredentialsRequired);
 
   // Re-validate server-side so a client can't skip the check.
   const check = await validateAppCredentials(input.appId, input.appSecret, input.tenant);
-  if (!check.ok) throw new HttpError(400, `凭据校验失败：${check.reason ?? '未知原因'}`);
+  if (!check.ok) {
+    throw new HttpError(400, msgs().web.credentialsInvalid(check.reason ?? msgs().web.unknownReason));
+  }
 
   const { profile } = await writeNewProfile(input, rootDir);
   return { ok: true, profile, botName: check.botName };
@@ -115,7 +120,10 @@ export async function writeNewProfile(
   try {
     appPaths = resolveAppPaths({ rootDir, profile: input.profile });
   } catch (err) {
-    throw new HttpError(400, `profile 名称无效：${err instanceof Error ? err.message : String(err)}`);
+    throw new HttpError(
+      400,
+      msgs().web.profileNameInvalid(err instanceof Error ? err.message : String(err)),
+    );
   }
   const profile = appPaths.profile;
 
@@ -123,7 +131,7 @@ export async function writeNewProfile(
   // before storing the secret; re-checked inside the lock against races.
   const pre = await loadRootConfig(appPaths.configFile);
   if (pre?.profiles[profile]) {
-    throw new HttpError(409, `profile 已存在：${profile}，请换个名字`);
+    throw new HttpError(409, msgs().web.profileExists(profile));
   }
 
   const encrypted = await encryptAccount(input, appPaths);
@@ -150,7 +158,7 @@ export async function writeNewProfile(
       return;
     }
     if (root.profiles[profile]) {
-      throw new HttpError(409, `profile 已存在：${profile}，请换个名字`);
+      throw new HttpError(409, msgs().web.profileExists(profile));
     }
     root.profiles[profile] = { ...profileConfig, secrets: undefined };
     if (!root.secrets && encrypted.secrets) root.secrets = encrypted.secrets;

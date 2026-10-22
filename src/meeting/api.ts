@@ -1,3 +1,4 @@
+import { msgs } from '../i18n';
 import { log } from '../core/logger';
 
 /**
@@ -122,7 +123,7 @@ export async function joinMeeting(
 ): Promise<JoinedMeeting> {
   const meetingNo = opts.meetingNo.trim();
   if (!isMeetingNo(meetingNo)) {
-    throw new Error(`会议号必须是 9 位数字：${opts.meetingNo}`);
+    throw new Error(msgs().commands.meetingNoInvalid(opts.meetingNo));
   }
   const data = await call<{ meeting?: { id?: string; topic?: string } }>(client, {
     method: 'POST',
@@ -136,7 +137,7 @@ export async function joinMeeting(
     },
   });
   const meetingId = data.meeting?.id;
-  if (!meetingId) throw new Error('入会成功但未返回 meeting.id');
+  if (!meetingId) throw new Error(msgs().commands.meetingJoinNoId);
   log.info('meeting', 'joined', { meetingNo, meetingId });
   return { meetingId, meetingNo, ...(data.meeting?.topic ? { topic: data.meeting.topic } : {}) };
 }

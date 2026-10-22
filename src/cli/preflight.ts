@@ -15,6 +15,7 @@ import {
 } from '../config/profile-store';
 import type { AppConfig } from '../config/schema';
 import { log } from '../core/logger';
+import { msgs } from '../i18n';
 import {
   hasLarkCliUserAuth,
   hasStructuredLarkCliUserAuth,
@@ -31,14 +32,20 @@ const BIND_TIMEOUT_MS = 30 * 1000;
 const BOLD = '\x1b[1m';
 const RESET = '\x1b[0m';
 
-const MANUAL_INSTALL_HINT = [
-  'Manual install command:',
-  `  ${BOLD}npm install -g @larksuite/cli${RESET}`,
-  '',
-  'Restart the current profile after installation; bridge will initialize lark-cli automatically.',
-  '',
-  'Docs: https://github.com/larksuite/cli',
-].join('\n');
+const INSTALL_COMMAND = `  ${BOLD}npm install -g @larksuite/cli${RESET}`;
+const DOCS_URL = 'https://github.com/larksuite/cli';
+
+function manualInstallHint(): string {
+  const m = msgs().setup;
+  return [
+    m.manualInstallTitle,
+    INSTALL_COMMAND,
+    '',
+    m.manualInstallRestart,
+    '',
+    m.docsLine(DOCS_URL),
+  ].join('\n');
+}
 
 export interface PreFlightOptions {
   /** Skip lark-cli auto-install + bind. */
@@ -68,47 +75,37 @@ async function checkLarkCli(opts: PreFlightOptions): Promise<void> {
   const profileArgs =
     privateBinding || !opts.larkChannel?.profile ? [] : ['--profile', opts.larkChannel.profile];
 
+  const m = msgs().setup;
   if (!isLarkCliInstalled()) {
-    console.log(
-      [
-        '',
-        'lark-cli is not installed',
-        '',
-        'lark-cli is the Feishu/Lark command-line tool. After installation, the agent can:',
-        '  - send interactive cards and forms',
-        '  - query calendars, docs, tasks, OKRs, and attendance',
-        '  - use 200+ Feishu/Lark API commands',
-        '',
-      ].join('\n'),
-    );
+    console.log(`\n${m.larkCliNotInstalled}\n`);
 
     // Non-TTY (daemon / launchd / nohup / CI): don't auto-install — users
     // running headless typically don't expect a long network install to fire
     // under them. Print manual hint and continue startup.
     if (!process.stdin.isTTY) {
-      console.log(`(non-interactive mode; skipping auto-install)\n\n${MANUAL_INSTALL_HINT}\n`);
+      console.log(`${m.nonInteractiveSkipInstall}\n\n${manualInstallHint()}\n`);
       return;
     }
 
-    p.intro('Setting up lark-cli');
+    p.intro(m.larkCliSetupIntro);
 
     const sInstall = p.spinner();
-    sInstall.start('Installing lark-cli');
+    sInstall.start(m.larkCliInstalling);
     const installResult = await runCapture(
       'npm',
       ['install', '-g', '@larksuite/cli'],
       INSTALL_TIMEOUT_MS,
     );
     if (!installResult.success || !isLarkCliInstalled()) {
-      sInstall.error('Install failed');
+      sInstall.error(m.larkCliInstallFailed);
       if (installResult.output.trim()) {
         console.error(installResult.output);
       }
-      p.outro('lark-cli installation did not complete');
+      p.outro(m.larkCliInstallIncomplete);
       printInstallFailedWarning();
       return;
     }
-    sInstall.stop('Installed');
+    sInstall.stop(m.larkCliInstalled);
   }
 
   if (privateBinding) {
@@ -222,7 +219,7 @@ async function checkLarkCli(opts: PreFlightOptions): Promise<void> {
       ? await detectLocalSameAppUser(bridgeConfig, legacyLarkChannelEnv)
       : { status: 'not-needed' as const, reason: 'not-private-binding' };
   const sBind = p.spinner();
-  sBind.start('Initializing lark-cli configuration');
+  sBind.start(m.larkCliBinding);
   const bindResult = await bindLarkCliWithCompatibility(
     profileArgs,
     larkChannelEnv,
@@ -231,7 +228,7 @@ async function checkLarkCli(opts: PreFlightOptions): Promise<void> {
     'bot-only',
   );
   if (!bindResult.success) {
-    sBind.error('lark-cli configuration failed');
+    sBind.error(m.larkCliBindFailed);
     if (privateBinding) {
       await persistLarkCliConfig(opts, {
         identityPreset: 'bot-only',
@@ -270,8 +267,8 @@ async function checkLarkCli(opts: PreFlightOptions): Promise<void> {
       });
     }
   }
-  sBind.stop('lark-cli configuration ready');
-  p.outro('Done');
+  sBind.stop(m.larkCliBindReady);
+  p.outro(m.setupDone);
 }
 
 async function bindLarkCliWithCompatibility(
@@ -570,53 +567,54 @@ async function persistLarkCliConfig(
 }
 
 function printInstallFailedWarning(): void {
+  const m = msgs().setup;
+  // Rules above and below instead of a closed box: CJK titles are double-width,
+  // so a hand-padded right border cannot line up across locales.
+  const rule = `${BOLD}${'═'.repeat(66)}${RESET}`;
   console.error(
     [
       '',
-      `${BOLD}╔════════════════════════════════════════════════════════════════╗${RESET}`,
-      `${BOLD}║  lark-cli auto-install failed                                 ║${RESET}`,
-      `${BOLD}╚════════════════════════════════════════════════════════════════╝${RESET}`,
+      rule,
+      `${BOLD}  ${m.installFailedTitle}${RESET}`,
+      rule,
       '',
-      'Possible causes: network unavailable, npm global install permission denied, or registry failure.',
+      m.installFailedCauses,
       '',
-      'Bridge will keep running, but the agent may be unable to use Feishu/Lark tools.',
-      'Run manually:',
+      m.installFailedImpact,
+      m.runManually,
       '',
-      `  ${BOLD}npm install -g @larksuite/cli${RESET}`,
+      INSTALL_COMMAND,
       '',
-      'Docs: https://github.com/larksuite/cli',
-      'After installation, restart bridge or rerun the current start command.',
+      m.docsLine(DOCS_URL),
+      m.installFailedRestart,
       '',
     ].join('\n'),
   );
 }
 
 function printBindFailedWarning(result: RunResult, appPaths?: AppPaths): void {
+  const m = msgs().setup;
   const profile = appPaths?.profile;
+  const restart = m.restartInstruction(profile ? ` --profile ${profile}` : '');
   const tooOld = isUnsupportedLarkChannelSource(result.output);
   const lines = tooOld
     ? [
-        'The installed lark-cli does not support the lark-channel source required by bridge auto-configuration.',
-        'Bridge will keep listening for messages, but the agent cannot use lark-cli to call Feishu/Lark APIs.',
+        m.bindTooOldReason,
+        m.bindTooOldImpact,
         '',
-        'Recovery:',
-        '  1. Install a lark-cli build that supports the lark-channel source.',
-        `  2. ${restartInstruction(profile)}`,
+        m.recoveryTitle,
+        `  1. ${m.bindTooOldInstallNewer}`,
+        `  2. ${restart}`,
       ]
     : [
-        'Bridge will keep listening for messages, but this profile did not finish lark-cli configuration.',
-        'Impact: the agent may be unable to send messages, send cards, or call Feishu/Lark APIs through lark-cli.',
+        m.bindFailedReason,
+        m.bindFailedImpact,
         '',
-        'Recovery:',
-        `  1. ${restartInstruction(profile)}`,
-        '  2. If it still fails, check that this profile has a valid App Secret and that the lark-cli config directory is writable.',
+        m.recoveryTitle,
+        `  1. ${restart}`,
+        `  2. ${m.bindFailedCheckSecret}`,
       ];
-  console.log(['', ...lines, '', 'Diagnostic details:', formatDiagnosticOutput(result.output), ''].join('\n'));
-}
-
-function restartInstruction(profile?: string): string {
-  const suffix = profile ? ` --profile ${profile}` : '';
-  return `Restart the current profile: lark-channel-bridge restart${suffix}; for foreground runs, press Ctrl+C and rerun lark-channel-bridge run${suffix}.`;
+  console.log(['', ...lines, '', m.diagnosticTitle, formatDiagnosticOutput(result.output), ''].join('\n'));
 }
 
 function shouldUseLegacyLarkChannelSourceOverlay(output: string, appPaths: AppPaths): boolean {
@@ -645,17 +643,18 @@ function isUnsupportedLarkChannelSource(output: string): boolean {
 }
 
 function formatDiagnosticOutput(output: string): string {
+  const m = msgs().setup;
   const trimmed = output.trim();
-  if (!trimmed) return '(lark-cli did not print error details)';
+  if (!trimmed) return m.diagnosticEmpty;
   if (/unknown flag:\s*--source/i.test(trimmed) || /unknown command ["']?bind["']?/i.test(trimmed)) {
-    return 'lark-cli does not support `config bind --source lark-channel`.';
+    return m.diagnosticNoBindSource;
   }
   const parsed = parseJson(trimmed);
   if (parsed !== undefined) {
     return JSON.stringify(stripLarkCliNotices(parsed), null, 2);
   }
   const lines = trimmed.split(/\r?\n/).filter((line) => !isLarkCliUpdateNoticeLine(line));
-  return lines.join('\n').trim() || '(lark-cli did not print error details)';
+  return lines.join('\n').trim() || m.diagnosticEmpty;
 }
 
 function parseJson(text: string): unknown | undefined {

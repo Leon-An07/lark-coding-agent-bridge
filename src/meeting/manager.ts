@@ -1,3 +1,4 @@
+import { msgs } from '../i18n';
 import { log } from '../core/logger';
 import type { MeetingConfig } from '../config/profile-schema';
 import { joinMeeting, VcApiError, type RawActivityItem, type VcRequestClient } from './api';
@@ -117,7 +118,7 @@ export class MeetingManager {
     if (typeof channel?.onRawEvent !== 'function') {
       this.push = {
         hooked: false,
-        reason: 'channel 不支持 onRawEvent（需要 @larksuite/channel >= 0.5.0），已降级为轮询',
+        reason: msgs().commands.meetingPushNoRawEvent,
         received: 0,
       };
       log.warn('meeting', 'push-hook-unavailable', { reason: this.push.reason });
@@ -141,7 +142,11 @@ export class MeetingManager {
       log.info('meeting', 'push-hooked', {});
     } catch (err) {
       this.detachPush();
-      this.push = { hooked: false, reason: `注册事件失败：${String(err)}`, received: 0 };
+      this.push = {
+        hooked: false,
+        reason: msgs().commands.meetingPushHookFailed(String(err)),
+        received: 0,
+      };
       log.warn('meeting', 'push-hook-failed', { err: String(err) });
     }
     return this.pushHealth();
@@ -275,7 +280,7 @@ export class MeetingManager {
 /** Human-readable hint for the allowlisted-beta failure, else the raw message. */
 export function describeMeetingError(err: unknown): string {
   if (err instanceof VcApiError && err.notInGray) {
-    return '智能体入会能力尚未对本应用开通（错误码 20017）。需要先申请加入内测，再重试。';
+    return msgs().commands.meetingNotInGray;
   }
   return err instanceof Error ? err.message : String(err);
 }

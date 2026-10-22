@@ -2191,16 +2191,14 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
   const sub = parts[0] ?? '';
   const rest = parts.slice(1).join(' ');
   const manager = ctx.controls.meeting;
+  const m = msgs().commands;
 
   if (!ctx.controls.profileConfig.meeting.enabled) {
-    await reply(
-      ctx,
-      '会议智能体未启用。在 `/config` 或 Web 控制台里开启「会议智能体」后重启 bot 即可。',
-    );
+    await reply(ctx, m.meetingDisabled);
     return;
   }
   if (!manager) {
-    await reply(ctx, '会议能力未就绪（channel 未连接或启用后尚未重启）。');
+    await reply(ctx, m.meetingNotReady);
     return;
   }
 
@@ -2212,19 +2210,21 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
     case 'join': {
       const meetingNo = rest.replace(/\s/g, '');
       if (!isMeetingNo(meetingNo)) {
-        await reply(ctx, '用法：`/meeting join <9位会议号>`（只接受 9 位纯数字，不是会议链接）');
+        await reply(ctx, m.meetingJoinUsage);
         return;
       }
       try {
         const session = await manager.join(meetingNo, { originChatId: ctx.msg.chatId });
         await reply(
           ctx,
-          `✅ 已入会 **${session.topic ?? meetingNo}**\n` +
-            `会议号 ${session.meetingNo} · 会中发 \`${ctx.controls.profileConfig.meeting.trigger} 你的问题\` 可以问我\n` +
-            '`/meeting notes` 总结 · `/meeting leave` 离会',
+          m.meetingJoined(
+            session.topic ?? meetingNo,
+            session.meetingNo,
+            ctx.controls.profileConfig.meeting.trigger,
+          ),
         );
       } catch (err) {
-        await reply(ctx, `入会失败：${describeMeetingError(err)}`);
+        await reply(ctx, m.meetingJoinFailed(describeMeetingError(err)));
       }
       return;
     }
@@ -2235,7 +2235,7 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
         return;
       }
       await manager.leave(picked.session.meetingId);
-      await reply(ctx, `✅ 已离会（会议号 ${picked.session.meetingNo}）`);
+      await reply(ctx, m.meetingLeft(picked.session.meetingNo));
       return;
     }
     case 'transcript': {
@@ -2248,23 +2248,13 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
       }
       const lines = picked.session.recentTranscript();
       if (lines.length === 0) {
-        await reply(
-          ctx,
-          '字幕缓冲为空 —— agent 这次拿到的会议上下文是「（暂无字幕）」。\n' +
-            '注意：同一场会里 agent 复用一个会话，**早先轮次**的字幕仍留在它自己的对话历史里，' +
-            '所以它可能引用缓冲里已经没有的内容。`/new` 可以清掉该会话记忆。',
-        );
+        await reply(ctx, m.meetingTranscriptEmpty);
         return;
       }
       const tail = lines.slice(-30);
       await reply(
         ctx,
-        [
-          `字幕缓冲共 ${lines.length} 条${tail.length < lines.length ? `，以下是最近 ${tail.length} 条` : ''}：`,
-          '```',
-          ...tail,
-          '```',
-        ].join('\n'),
+        [m.meetingTranscriptHeader(lines.length, tail.length), '```', ...tail, '```'].join('\n'),
       );
       return;
     }
@@ -2275,7 +2265,7 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
         return;
       }
       const stopped = ctx.activeRuns.interrupt(meetingScopeId(picked.session.meetingId));
-      await reply(ctx, stopped ? '✅ 已中断该会议的当前任务。' : '该会议当前没有正在执行的任务。');
+      await reply(ctx, stopped ? m.meetingStopped : m.meetingNothingToStop);
       return;
     }
     case 'notes':
@@ -2293,14 +2283,14 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
           ? '请基于以上会议字幕做一份简洁纪要：讨论了什么、结论、待办（如有）。'
           : rest;
       if (!question) {
-        await reply(ctx, '用法：`/meeting ask <问题>`');
+        await reply(ctx, m.meetingAskUsage);
         return;
       }
       if (!ctx.runExecutor) {
-        await reply(ctx, '当前上下文无法执行 agent（缺少 run executor）。');
+        await reply(ctx, m.meetingNoExecutor);
         return;
       }
-      await reply(ctx, sub === 'notes' ? '正在总结会议…' : '正在思考…');
+      await reply(ctx, sub === 'notes' ? m.meetingSummarizing : m.meetingThinking);
       try {
         const answer = await answerInMeeting(
           {
@@ -2318,26 +2308,14 @@ async function handleMeeting(args: string, ctx: CommandContext): Promise<void> {
           // summary somebody asked for in a DM would surprise the meeting.
           { deliver: 'caller' },
         );
-        await reply(ctx, answer || '（没有产生回答）');
+        await reply(ctx, answer || m.meetingNoAnswer);
       } catch (err) {
-        await reply(ctx, `执行失败：${describeMeetingError(err)}`);
+        await reply(ctx, m.meetingRunFailed(describeMeetingError(err)));
       }
       return;
     }
     default:
-      await reply(
-        ctx,
-        [
-          '用法：',
-          '`/meeting` — 状态',
-          '`/meeting join <9位会议号>` — 让 bot 入会',
-          '`/meeting leave [会议号]` — 离会',
-          '`/meeting notes [会议号]` — 基于字幕做纪要（只发给你）',
-          '`/meeting stop [会议号]` — 中断该会议卡住的任务',
-          '`/meeting transcript [会议号]` — 看 agent 实际拿到的字幕上下文',
-          '`/meeting ask <问题>` — 带会议上下文提问',
-        ].join('\n'),
-      );
+      await reply(ctx, m.meetingHelp);
   }
 }
 
@@ -2357,17 +2335,18 @@ function pickMeetingSession(
   ctx: CommandContext,
   explicit: string,
 ): PickedSession {
+  const m = msgs().commands;
   const wanted = explicit.replace(/\s/g, '');
   if (wanted) {
     const found = manager.byMeetingNo(wanted);
     return found
       ? { ok: true, session: found }
-      : { ok: false, message: `没找到会议号 ${wanted} 对应的会议。用 \`/meeting\` 看当前在跟哪几场。` };
+      : { ok: false, message: m.meetingNotFound(wanted) };
   }
 
   const all = manager.all();
   if (all.length === 0) {
-    return { ok: false, message: '当前没有在跟的会议。先 `/meeting join <9位会议号>`。' };
+    return { ok: false, message: m.meetingNoneActive };
   }
   if (all.length === 1) return { ok: true, session: all[0]! };
 
@@ -2376,27 +2355,29 @@ function pickMeetingSession(
   if (fromHere.length === 1) return { ok: true, session: fromHere[0]! };
 
   const list = all.map((s) => `- ${s.meetingNo}${s.topic ? `（${s.topic}）` : ''}`).join('\n');
-  return {
-    ok: false,
-    message: `当前在跟 ${all.length} 场会议，请指定会议号：\n${list}\n\n例如 \`/meeting notes ${all[0]!.meetingNo}\``,
-  };
+  return { ok: false, message: m.meetingPickOne(all.length, list, all[0]!.meetingNo) };
 }
 
 async function replyMeetingStatus(ctx: CommandContext, manager: MeetingManager): Promise<void> {
   const sessions = manager.list();
   const push = manager.pushHealth();
+  const m = msgs().commands;
   const pushLine = push.hooked
-    ? `推送：已挂载，累计收到 ${push.received} 条${push.received === 0 ? '（尚未收到，可能还没在后台订阅 vc.bot.* 事件）' : ''}`
-    : `推送：未挂载（${push.reason ?? '未知原因'}），仅靠轮询`;
+    ? m.meetingPushHooked(push.received)
+    : m.meetingPushUnhooked(push.reason ?? m.meetingUnknownReason);
 
   if (sessions.length === 0) {
-    await reply(ctx, [`当前没有在跟的会议。`, pushLine, '', '`/meeting join <9位会议号>` 开始。'].join('\n'));
+    await reply(ctx, m.meetingStatusNone(pushLine));
     return;
   }
-  const lines = sessions.map(
-    (s) =>
-      `- **${s.topic ?? s.meetingNo}**（${s.meetingNo}）· 来源 ${s.source === 'push' ? '推送' : '轮询'}` +
-      ` · 字幕 ${s.transcriptLines} 条 · 参会 ${s.participants} 人`,
+  const lines = sessions.map((s) =>
+    m.meetingStatusLine(
+      s.topic ?? s.meetingNo,
+      s.meetingNo,
+      s.source === 'push',
+      s.transcriptLines,
+      s.participants,
+    ),
   );
-  await reply(ctx, [`正在跟 ${sessions.length} 场会议：`, ...lines, '', pushLine].join('\n'));
+  await reply(ctx, [m.meetingStatusHeader(sessions.length), ...lines, '', pushLine].join('\n'));
 }

@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE, normalizeLocale, type Locale } from '../i18n';
+import { DEFAULT_LOCALE, detectOsLocale, normalizeLocale, type Locale } from '../i18n';
 
 export type TenantBrand = 'feishu' | 'lark';
 
@@ -319,9 +319,9 @@ export function getAgentStopGraceMs(cfg: AppConfig): number {
   return Math.min(30_000, Math.max(100, Math.floor(raw)));
 }
 
-/** UI language: preferences.language → normalized locale, default zh-CN. */
+/** UI language: preferences.language → the OS locale → zh-CN. */
 export function getLanguage(cfg: AppConfig): Locale {
-  return normalizeLocale(cfg.preferences?.language) ?? DEFAULT_LOCALE;
+  return normalizeLocale(cfg.preferences?.language) ?? detectOsLocale() ?? DEFAULT_LOCALE;
 }
 
 /**

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runProfileCreate } from '../../../src/cli/commands/profile';
+import { msgs } from '../../../src/i18n';
 import { resolveAppPaths } from '../../../src/config/app-paths';
 import {
   createDefaultProfileConfig,
@@ -114,7 +115,7 @@ describe('profile create command', () => {
         appId: 'cli_other',
         appSecret: 'manual-secret',
       }),
-    ).rejects.toThrow(/profile already exists/);
+    ).rejects.toThrow(msgs().cli.profileAlreadyExists('claude'));
   });
 
   it('explains how to recover when an existing profile has the wrong agent', async () => {
@@ -148,11 +149,7 @@ describe('profile create command', () => {
 
     expect(error).toBeDefined();
     const message = error?.message ?? '';
-    expect(message).toContain('profile codex already exists with agentKind claude');
-    expect(message).toContain('profile create requested --agent codex');
-    expect(message).toContain('Profile names are labels');
-    expect(message).toContain('choose another name');
-    expect(message).toContain('remove profile codex');
+    expect(message).toBe(msgs().cli.profileAgentKindMismatch('codex', 'claude', 'codex'));
   });
 
   it('creates a named profile without requiring a user workspace', async () => {

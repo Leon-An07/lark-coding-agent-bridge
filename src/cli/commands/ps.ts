@@ -56,12 +56,9 @@ export async function runKillCli(target: string | undefined): Promise<void> {
   }
   const owner = findOwningService(entry);
   if (owner) {
-    console.error(
-      `✗ bot ${entry.id} (pid ${entry.pid}) 由 ${owner.platformName} 托管,` +
-        'SIGTERM 之后会被服务管理器立刻重启。',
-    );
-    console.error(`  要停掉它:  ${owner.stopHint}`);
-    console.error(`  只是想重启: ${owner.restartHint}`);
+    console.error(m.cli.killServiceManaged(entry.id, entry.pid, owner.platformName));
+    console.error(m.cli.killServiceStopHint(owner.stopHint));
+    console.error(m.cli.killServiceRestartHint(owner.restartHint));
     process.exit(1);
   }
 
@@ -135,7 +132,7 @@ export async function stopProcessEntry(
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error(`process ${entry.pid} did not exit after SIGKILL`);
+  throw new Error(msgs().cli.killDidNotExit(entry.pid));
 }
 
 function formatAgo(ms: number): string {

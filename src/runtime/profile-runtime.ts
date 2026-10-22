@@ -38,7 +38,7 @@ import {
 import { permissionsToLegacySandbox } from '../config/permissions';
 import type { AppConfig, SecretInput, TenantBrand } from '../config/schema';
 import { getLanguage, isComplete, isSecretRef, secretKeyForApp } from '../config/schema';
-import { msgs, normalizeLocale, setActiveLocale } from '../i18n';
+import { detectOsLocale, msgs, setActiveLocale } from '../i18n';
 import { resolveAppSecret } from '../config/secret-resolver';
 import {
   buildEncryptedAccountConfig,
@@ -98,7 +98,7 @@ export function createRuntimeProfileConfig(
  * Central CLI locale bootstrap: every command that resolves a profile
  * runtime inherits the configured language without per-command wiring.
  * When the config can't be loaded (absent / incomplete), fall back to the
- * user's LANG environment if it maps to a supported locale.
+ * OS locale (env vars, then Intl — Windows sets no LANG).
  */
 export async function resolveProfileRuntime(
   opts: ResolveProfileRuntimeOptions,
@@ -108,8 +108,8 @@ export async function resolveProfileRuntime(
     setActiveLocale(getLanguage(runtime.cfg));
     return runtime;
   } catch (err) {
-    const envLocale = normalizeLocale(process.env.LANG);
-    if (envLocale) setActiveLocale(envLocale);
+    const osLocale = detectOsLocale();
+    if (osLocale) setActiveLocale(osLocale);
     throw err;
   }
 }

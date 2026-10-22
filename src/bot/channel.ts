@@ -630,9 +630,7 @@ async function sendForwardFetchFailedHint(
   chatId: string,
   replyToMessageId: string,
 ): Promise<void> {
-  const text =
-    '这条合并转发的内容没能从飞书拉取到（上游超时/网络抖动，已自动重试仍失败），' +
-    '所以我没收到里面的消息。麻烦稍后重新转发一次。';
+  const text = msgs().bot.forwardFetchFailed;
   try {
     await channel.send(chatId, { text }, { replyTo: replyToMessageId });
   } catch {

@@ -113,14 +113,9 @@ export async function runProfileCreate(
     if (existing) {
       const requested = agentKindFromString(opts.agent);
       if (requested && existing.agentKind !== requested) {
-        throw new Error(
-          `profile ${name} already exists with agentKind ${existing.agentKind}, ` +
-            `but profile create requested --agent ${requested}. ` +
-            `Profile names are labels; use the existing ${existing.agentKind} profile, ` +
-            `choose another name, or remove profile ${name} before creating a ${requested} profile.`,
-        );
+        throw new Error(msgs().cli.profileAgentKindMismatch(name, existing.agentKind, requested));
       }
-      throw new Error(`profile already exists: ${name}`);
+      throw new Error(msgs().cli.profileAlreadyExists(name));
     }
 
     await resolveProfileRuntime({
@@ -145,7 +140,7 @@ export async function runProfileUse(
   const configFile = resolveAppPaths({ rootDir }).configFile;
   await withConfigFileLock(configFile, async () => {
     const root = await loadRootConfig(configFile);
-    if (!root?.profiles[name]) throw new Error(`profile not found: ${name}`);
+    if (!root?.profiles[name]) throw new Error(msgs().cli.profileNotFound(name));
     root.activeProfile = name;
     await saveRootConfig(root, configFile);
     await writeActiveProfile(rootDir, name);
@@ -159,26 +154,25 @@ export async function runProfileRemove(
 ): Promise<void> {
   const rootDir = opts.rootDir ?? paths.rootDir;
   if (opts.purge && !opts.yes) {
-    throw new Error('profile remove --purge requires --yes');
+    throw new Error(msgs().cli.profilePurgeRequiresYes);
   }
   const configFile = resolveAppPaths({ rootDir }).configFile;
   await withConfigFileLock(configFile, async () => {
     const root = await loadRootConfig(configFile);
-    if (!root) throw new Error('config not initialized');
+    if (!root) throw new Error(msgs().cli.configNotInitialized);
     const profile = root.profiles[name];
-    if (!profile) throw new Error(`profile not found: ${name}`);
+    if (!profile) throw new Error(msgs().cli.profileNotFound(name));
     const activeProfile = await readActiveProfile(rootDir);
     if (activeProfile) {
       if (!root.profiles[activeProfile]) {
-        throw new Error(`active profile not found: ${activeProfile}; run profile use <name> to repair`);
+        throw new Error(msgs().cli.activeProfileNotFound(activeProfile));
       }
       root.activeProfile = activeProfile;
     }
     const profilePaths = resolveAppPaths({ rootDir, profile: name });
     const profileLock = await checkRuntimeLock(profilePaths.profileLockFile);
     if (profileLock.locked) {
-      const holder = profileLock.meta ? ` pid=${profileLock.meta.pid}` : '';
-      throw new Error(`profile is locked/running: ${name}${holder}`);
+      throw new Error(msgs().cli.profileLocked(name, profileLock.meta?.pid));
     }
     const lock = await acquireProfileRuntimeLock(profilePaths, profile.agentKind);
     try {
@@ -202,9 +196,12 @@ export async function runProfileRemove(
             await writeActiveProfile(rootDir, root.activeProfile);
           } catch (restoreErr) {
             throw new Error(
-              `profile remove failed after moving ${name}; state is at ${result.archivedTo}. ` +
-                `restore failed: ${String((restoreErr as Error).message ?? restoreErr)}. ` +
-                `root config error: ${String((err as Error).message ?? err)}`,
+              msgs().cli.profileRemoveRestoreFailed({
+                name,
+                archivedTo: result.archivedTo,
+                restoreError: String((restoreErr as Error).message ?? restoreErr),
+                rootError: String((err as Error).message ?? err),
+              }),
             );
           }
         }
@@ -227,14 +224,14 @@ export async function runProfileExport(
   opts: ProfileExportOptions = {},
 ): Promise<void> {
   if (opts.includeSecrets && !opts.yes) {
-    throw new Error('profile export --include-secrets requires --yes');
+    throw new Error(msgs().cli.profileExportSecretsRequiresYes);
   }
   const rootDir = opts.rootDir ?? paths.rootDir;
   const configFile = resolveAppPaths({ rootDir }).configFile;
   const root = await loadRootConfig(configFile);
-  if (!root) throw new Error('config not initialized');
+  if (!root) throw new Error(msgs().cli.configNotInitialized);
   const selected = root.profiles[name];
-  if (!selected) throw new Error(`profile not found: ${name}`);
+  if (!selected) throw new Error(msgs().cli.profileNotFound(name));
 
   const profile = cloneJson(selected);
   if (opts.includeSecrets) {
@@ -266,7 +263,7 @@ export async function runProfileExport(
     return;
   }
   if (existsSync(opts.output) && !opts.force) {
-    throw new Error('output already exists; use --force');
+    throw new Error(msgs().cli.profileExportOutputExists);
   }
   await writeFileAtomic(opts.output, body, { mode: 0o600 });
   console.log(msgs().cli.profileExported(name, opts.output));

@@ -68,7 +68,7 @@ async function resolveServiceTarget(
   // keeps respawning it after every `kill`. An explicit `--profile` is left
   // alone: the user asked for that per-profile service, not the machine-wide one.
   if (!opts.profile && !serviceFileExists(profile) && serviceFileExists(SUPERVISOR_SERVICE_ID)) {
-    console.log(`ℹ profile「${profile}」没有独立的后台服务,已指向控制面 supervisor 服务(等同 --web-ui)。`);
+    console.log(msgs().cli.serviceProfileFallbackToSupervisor(profile));
     return { serviceId: SUPERVISOR_SERVICE_ID, webUi: true };
   }
   return { serviceId: profile, profile, webUi: false };
@@ -315,9 +315,10 @@ async function reportConnectAfter(
     );
     return;
   }
-  console.warn(m.cli.serviceConnectTimeout(verb));
-  console.warn(m.cli.serviceViewLogs(daemonStderrPath(profile)));
-  console.warn(`              tail -f ${daemonStdoutPath(profile)}`);
+  console.warn(
+    m.cli.serviceConnectTimeout(verb === 'started' ? m.cli.serviceVerbStart : m.cli.serviceVerbRestart),
+  );
+  console.warn(m.cli.serviceViewLogs(daemonStderrPath(profile), daemonStdoutPath(profile)));
 }
 
 /**
@@ -419,22 +420,23 @@ async function runServiceStartWebUi(opts: ServiceStartOptions): Promise<void> {
   await adapter.install();
 
   if (adapter.isRunning()) {
-    console.log('检测到 supervisor 服务已在运行,先停掉再重启...');
+    console.log(msgs().cli.supervisorOldInstanceRestart);
     const r = await adapter.stop();
     if (!r.ok) {
-      console.warn(`⚠ 停止旧 supervisor 时有警告(继续重启):\n${formatServiceStderr(r.stderr)}`);
+      console.warn(msgs().cli.supervisorStopOldWarning(formatServiceStderr(r.stderr)));
     }
     const ok = await adapter.waitUntilStopped();
     if (!ok) {
-      console.error('✗ 旧 supervisor 服务没有完全停止。请稍后重试,或:');
-      console.error('  unregister --web-ui  # 强制清除注册');
-      console.error('  start --web-ui       # 再次启动');
+      const m = msgs();
+      console.error(m.cli.supervisorOldInstanceStuck);
+      console.error(m.cli.supervisorUnregisterHint);
+      console.error(m.cli.supervisorStartAgainHint);
       process.exit(1);
     }
   }
 
   await reportConnectAfter('started', profile, adapter.start);
-  console.log('  控制台由后台 supervisor 托管；用 `lark-channel-bridge ui` 打开');
+  console.log(msgs().cli.supervisorConsoleHint);
 }
 
 /**
@@ -451,8 +453,9 @@ async function runServiceStartWebUi(opts: ServiceStartOptions): Promise<void> {
 export async function runServiceStop(opts: ServiceProfileOptions = {}): Promise<void> {
   const { serviceId, profile, webUi } = await resolveServiceTarget(opts);
   const adapter = requireAdapter('stop', serviceId);
+  const m = msgs();
   if (!adapter.fileExists()) {
-    console.log(webUi ? 'supervisor 还没在后台运行过,无需停止。' : 'bot 还没在后台运行过,无需停止。');
+    console.log(webUi ? m.cli.supervisorNeverRanNoStop : m.cli.serviceNeverRanNoStop);
     return;
   }
   if (!adapter.isRunning()) {
@@ -460,8 +463,8 @@ export async function runServiceStop(opts: ServiceProfileOptions = {}): Promise<
     // autostart (launchd RunAtLoad / systemd WantedBy) — which is exactly how
     // a "stopped" daemon comes back on its own. Make `stop` mean stopped.
     const r = await adapter.disableAutostart();
-    console.log(webUi ? 'supervisor 当前没在后台运行。' : 'bot 当前没在后台运行。');
-    if (r.ok) console.log('  已关闭开机自启。');
+    console.log(webUi ? m.cli.supervisorNotRunning : m.cli.serviceNotRunning);
+    if (r.ok) console.log(m.cli.autostartDisabled);
     return;
   }
 
@@ -473,20 +476,20 @@ export async function runServiceStop(opts: ServiceProfileOptions = {}): Promise<
 
   const r = await adapter.stopAndDisableAutostart();
   if (!r.ok) {
-    console.error(msgs().cli.serviceStopFailed(formatServiceStderr(r.stderr)));
+    console.error(m.cli.serviceStopFailed(formatServiceStderr(r.stderr)));
     process.exit(1);
   }
   if (webUi) {
-    console.log('✓ 控制面 supervisor 已停止运行');
-    console.log('  通过 `start --web-ui` 可再次重启');
+    console.log(m.cli.supervisorStopped);
+    console.log(m.cli.supervisorRestartHint);
     return;
   }
   if (entry) {
-    console.log(msgs().cli.serviceBotStoppedNamed(entry.botName, entry.appId));
+    console.log(m.cli.serviceBotStoppedNamed(entry.botName, entry.appId));
   } else {
-    console.log(msgs().cli.serviceBotStopped);
+    console.log(m.cli.serviceBotStopped);
   }
-  console.log(msgs().cli.serviceRestartHint);
+  console.log(m.cli.serviceRestartHint);
 }
 
 /**
@@ -503,11 +506,7 @@ export async function runServiceRestart(opts: ServiceProfileOptions = {}): Promi
     webUi ? WEB_UI_RUN_ARGS : classicRunArgs(serviceId),
   );
   if (!adapter.fileExists()) {
-    console.error(
-      webUi
-        ? 'supervisor 还没在后台运行过。请先运行 `start --web-ui` 启动。'
-        : 'bot 还没在后台运行过。请先运行 `start` 启动。',
-    );
+    console.error(webUi ? msgs().cli.supervisorNeverRanRestart : msgs().cli.serviceNeverRanRestart);
     process.exit(1);
   }
   // Health-check waits on a profile connecting: classic → the service's own
@@ -524,16 +523,15 @@ export async function runServiceRestart(opts: ServiceProfileOptions = {}): Promi
 export async function runServiceStatus(opts: ServiceProfileOptions = {}): Promise<void> {
   const { serviceId, profile, webUi } = await resolveServiceTarget(opts);
   const adapter = requireAdapter('status', serviceId);
-  const startHint = webUi ? '`start --web-ui`' : '`start`';
-  const label = webUi ? '控制面 supervisor' : 'bot';
+  const m = msgs();
   if (!adapter.fileExists()) {
-    console.log(`${label} 当前没在后台运行(从未启动过)`);
-    console.log(`  通过 ${startHint} 启动`);
+    console.log(webUi ? m.cli.supervisorStatusNeverStarted : m.cli.statusNeverStarted);
+    console.log(webUi ? m.cli.supervisorStatusStartHint : m.cli.statusStartHint);
     return;
   }
   if (!adapter.isRunning()) {
-    console.log(`${label} 当前没在后台运行`);
-    console.log(`  通过 ${startHint} 重新启动`);
+    console.log(webUi ? m.cli.supervisorStatusNotRunning : m.cli.statusNotRunning);
+    console.log(webUi ? m.cli.supervisorStatusRestartHint : m.cli.statusRestartHint);
     return;
   }
 
@@ -542,22 +540,22 @@ export async function runServiceStatus(opts: ServiceProfileOptions = {}): Promis
   const { pid, lastExit } = adapter.parseStatus(adapter.describeStatus());
 
   if (webUi) {
-    console.log('✓ 控制面 supervisor 正在后台运行');
-    const online = readAndPrune().filter((e) => Boolean(e.botName));
+    console.log(m.cli.supervisorStatusRunning);
+    const online = readAndPrune().flatMap((e) => (e.botName ? [e.botName] : []));
     if (online.length) {
-      console.log(`  在线 bot: ${online.map((e) => e.botName).join('、')}`);
+      console.log(m.cli.statusOnlineBots(online));
     }
   } else if (entry) {
-    console.log(msgs().cli.statusRunningNamed(entry.botName, entry.appId));
+    console.log(m.cli.statusRunningNamed(entry.botName, entry.appId));
   } else {
-    console.log(msgs().cli.statusRunning);
+    console.log(m.cli.statusRunning);
   }
-  if (pid) console.log(msgs().cli.statusPid(pid));
-  console.log(msgs().cli.statusLogsLabel);
+  if (pid) console.log(m.cli.statusPid(pid));
+  console.log(m.cli.statusLogsLabel);
   console.log(`    ${daemonStdoutPath(serviceId)}`);
   console.log(`    ${daemonStderrPath(serviceId)}`);
   // -1 is launchd's "no meaningful exit recorded" marker; hide it.
-  if (lastExit && lastExit !== '-1') console.log(msgs().cli.statusLastExit(lastExit));
+  if (lastExit && lastExit !== '-1') console.log(m.cli.statusLastExit(lastExit));
 }
 
 /**
@@ -570,22 +568,23 @@ export async function runServiceStatus(opts: ServiceProfileOptions = {}): Promis
 export async function runServiceUnregister(opts: ServiceProfileOptions = {}): Promise<void> {
   const { serviceId, webUi } = await resolveServiceTarget(opts);
   const adapter = requireAdapter('unregister', serviceId);
-  const label = webUi ? 'supervisor' : 'bot';
+  const m = msgs();
   if (!adapter.fileExists()) {
-    console.log(`${label} 还没在后台运行过,无需清理。`);
+    console.log(webUi ? m.cli.supervisorNeverRanNoCleanup : m.cli.serviceNeverRanNoCleanup);
     return;
   }
   if (adapter.isRunning()) {
     const r = await adapter.stopAndDisableAutostart();
     if (!r.ok) {
-      console.warn(`⚠ 停止 ${label} 时有警告(继续清理):\n${formatServiceStderr(r.stderr)}`);
+      const stderr = formatServiceStderr(r.stderr);
+      console.warn(webUi ? m.cli.supervisorStopWarnCleanup(stderr) : m.cli.serviceStopWarnCleanup(stderr));
     } else {
-      console.log(`✓ 已停止 ${label}`);
+      console.log(webUi ? m.cli.supervisorStoppedShort : m.cli.serviceBotStoppedShort);
     }
   }
   await adapter.deleteFile();
-  console.log(msgs().cli.serviceUnregistered);
-  console.log(msgs().cli.serviceUnregisteredKeep(paths.rootDir));
+  console.log(m.cli.serviceUnregistered);
+  console.log(m.cli.serviceUnregisteredKeep(paths.rootDir));
 }
 
 async function resolveServiceProfile(explicitProfile: string | undefined): Promise<string> {
@@ -593,9 +592,9 @@ async function resolveServiceProfile(explicitProfile: string | undefined): Promi
   const root = await loadRootConfig(paths.configFile);
   const profile = (await readActiveProfile(paths.rootDir)) ?? root?.activeProfile;
   if (!profile) {
-    throw new Error('active profile is required for service command; pass --profile <name>');
+    throw new Error(msgs().cli.serviceProfileRequired);
   }
-  if (root && !root.profiles[profile]) throw new Error(`profile not found: ${profile}`);
+  if (root && !root.profiles[profile]) throw new Error(msgs().cli.profileNotFound(profile));
   return profile;
 }
 

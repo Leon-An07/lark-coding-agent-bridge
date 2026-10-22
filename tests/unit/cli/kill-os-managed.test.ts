@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServiceAdapter } from '../../../src/daemon/service-adapter';
 import type { ProcessEntry } from '../../../src/runtime/registry';
+import { msgs } from '../../../src/i18n';
 
 const mocks = vi.hoisted(() => ({
   resolveTarget: vi.fn(),
@@ -52,7 +53,7 @@ describe('kill on OS-managed processes', () => {
 
     // Killing it would only hand the pid back to launchd's KeepAlive.
     expect(kill).not.toHaveBeenCalled();
-    expect(errors.join('\n')).toContain('由 launchd (macOS) 托管');
+    expect(errors.join('\n')).toContain(msgs().cli.killServiceManaged('4a93', 4242, 'launchd (macOS)'));
     expect(errors.join('\n')).toContain('lark-channel-bridge stop --web-ui');
     expect(errors.join('\n')).toContain('lark-channel-bridge restart --web-ui');
 

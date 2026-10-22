@@ -189,7 +189,7 @@ async function runClassic(opts: StartOptions): Promise<void> {
       throw err; // unhandled → surfaced to the CLI top-level handler (exit 1)
     }
   }
-  console.log(`✓ profile「${appPaths.profile}」已上线（前台运行，Ctrl-C 退出）`);
+  console.log(msgs().cli.runProfileOnlineForeground(appPaths.profile));
 
   await parkWithShutdown(supervisor, appPaths, undefined, undefined);
 }
@@ -217,8 +217,8 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
     const sidecar = await readUiSidecar(appPaths.hostUiFile);
     console.log(
       sidecar
-        ? `控制面已在运行：${sidecar.url}`
-        : '控制面已在运行（另一个 supervisor 进程持有锁）。',
+        ? msgs().cli.consoleAlreadyRunningAt(sidecar.url)
+        : msgs().cli.consoleAlreadyRunningLocked,
     );
     return;
   }
@@ -238,7 +238,7 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
   try {
     uiServer = await startUiServer({ supervisor, version: pkg.version, rootDir: appPaths.rootDir });
     await writeUiSidecar(appPaths.hostUiFile, uiServer, new Date().toISOString());
-    console.log(`✓ 控制台：${uiServer.url}`);
+    console.log(msgs().cli.consoleReady(uiServer.url));
   } catch (err) {
     log.warn('ui', 'server-start-failed', { err: String(err) });
   }
@@ -246,10 +246,10 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
   // Auto-start only the active profile; others start on demand from the console.
   try {
     await supervisor.startProfile(appPaths.profile);
-    console.log(`✓ profile「${appPaths.profile}」已上线`);
+    console.log(msgs().cli.runProfileOnline(appPaths.profile));
   } catch (err) {
     console.warn(
-      `⚠️ active profile「${appPaths.profile}」启动失败：${err instanceof Error ? err.message : String(err)}`,
+      msgs().cli.activeProfileStartFailed(appPaths.profile, err instanceof Error ? err.message : String(err)),
     );
     log.warn('supervisor', 'active-start-failed', { profile: appPaths.profile, err: String(err) });
   }
