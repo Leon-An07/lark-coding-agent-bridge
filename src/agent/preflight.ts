@@ -1,4 +1,5 @@
 import { msgs } from '../i18n';
+import { decodeChildOutput } from '../platform/console-decode';
 import { spawnProcess } from '../platform/spawn';
 
 export type LocalAgentId = 'claude' | 'codex';
@@ -77,8 +78,10 @@ export async function checkAgentVersion(input: CheckAgentVersionInput): Promise<
 
   return new Promise((resolve, reject) => {
     let settled = false;
-    let stdout = '';
-    let stderr = '';
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    const stdout = (): string => decodeChildOutput(Buffer.concat(stdoutChunks));
+    const stderr = (): string => decodeChildOutput(Buffer.concat(stderrChunks));
     let timer: ReturnType<typeof setTimeout> | undefined;
     const finish = (fn: () => void): void => {
       if (settled) return;
@@ -94,8 +97,8 @@ export async function checkAgentVersion(input: CheckAgentVersionInput): Promise<
       binaryPath: input.binaryPath,
       ...(input.realpath ? { realpath: input.realpath } : {}),
       args,
-      stdoutExcerpt: excerpt(stdout),
-      stderrExcerpt: excerpt(stderr),
+      stdoutExcerpt: excerpt(stdout()),
+      stderrExcerpt: excerpt(stderr()),
     });
 
     const child = (() => {
@@ -131,12 +134,8 @@ export async function checkAgentVersion(input: CheckAgentVersionInput): Promise<
       );
     }, timeoutMs);
 
-    child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
+    child.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+    child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
     child.once('error', (err: NodeJS.ErrnoException) => {
       finish(() =>
         reject(
@@ -172,7 +171,7 @@ export async function checkAgentVersion(input: CheckAgentVersionInput): Promise<
           );
           return;
         }
-        const version = (stdout.trim() || stderr.trim()).split('\n')[0]?.trim();
+        const version = (stdout().trim() || stderr().trim()).split('\n')[0]?.trim();
         if (!version) {
           reject(
             new AgentPreflightError({

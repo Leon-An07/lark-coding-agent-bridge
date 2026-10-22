@@ -165,12 +165,14 @@ function makeSchtasksAdapter(profile: string, runArgs: string[]): ServiceAdapter
     },
     describeStatus: () => schtasks.describeTask(profile),
     parseStatus: (text) => ({
-      // `Process ID: <n>` shows up in verbose listing only when task is running.
-      pid: text.match(/Process ID:\s*(\d+)/i)?.[1],
+      // schtasks never reports a PID; the service writes its own PID file.
+      pid: schtasks.queryOutputSaysRunning(text) ? schtasks.servicePid(profile)?.toString() : undefined,
       // `Last Result: <0|nonzero>` — `0` means last run succeeded.
       // Filter the `1056` ("task already running") and `267011` ("task hasn't
       // run") sentinels that aren't real exit codes.
-      lastExit: text.match(/Last Result:\s*(\d+)/i)?.[1],
+      lastExit: [text.match(/Last Result:\s*(\d+)/i)?.[1]].find(
+        (code) => code !== undefined && !['1056', '267009', '267011'].includes(code),
+      ),
     }),
   };
 }

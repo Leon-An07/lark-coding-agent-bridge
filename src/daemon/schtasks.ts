@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
@@ -8,8 +8,12 @@ import {
   daemonStdoutPath,
   windowsTaskName,
   windowsLauncherCmdPath,
+  windowsServicePidPath,
 } from './paths';
 import { paths } from '../config/paths';
+import { decodeChildOutput } from '../platform/console-decode';
+import { isProcessAlive, killWindowsProcessTree } from '../platform/spawn';
+import { batchEnvFrom, batchValue, renderBatchFile, type BatchEnv } from '../platform/windows-batch';
 
 export interface LauncherInputs {
   /** Absolute path to node.exe. */
@@ -26,6 +30,8 @@ export interface LauncherInputs {
   runArgs: string[];
   /** Root directory for config/profile state. */
   channelHome: string;
+  /** Per-user root dirs rewritten as `%VAR%` so the body stays ASCII. */
+  batchEnv?: BatchEnv;
 }
 
 /**
@@ -43,13 +49,22 @@ export interface LauncherInputs {
 export function buildLauncherCmd(inputs: LauncherInputs): string {
   // Profile names / flags are validated safe tokens (no spaces).
   const runArgs = inputs.runArgs.join(' ');
-  return [
-    '@echo off',
-    `set "LARK_CHANNEL_HOME=${inputs.channelHome}"`,
-    `set "PATH=${inputs.envPath}"`,
-    `"${inputs.nodePath}" "${inputs.bridgeEntryPath}" ${runArgs} >> "${daemonStdoutPath(inputs.profile)}" 2>> "${daemonStderrPath(inputs.profile)}"`,
-    '',
-  ].join('\r\n');
+  const env = inputs.batchEnv ?? batchEnvFrom();
+  const v = (s: string): string => batchValue(s, env);
+  // Paths under the user's profile become `%USERPROFILE%\...` so cmd.exe,
+  // which reads this file in the OEM codepage (CP932 on Japanese Windows),
+  // never sees raw non-ASCII. The launcher owns its console, so `chcp 65001`
+  // is a safe last resort for a non-ASCII path outside those roots.
+  return renderBatchFile(
+    [
+      '@echo off',
+      `set "LARK_CHANNEL_HOME=${v(inputs.channelHome)}"`,
+      `set "LARK_CHANNEL_SERVICE_PID_FILE=${v(windowsServicePidPath(inputs.profile))}"`,
+      `set "PATH=${v(inputs.envPath)}"`,
+      `"${v(inputs.nodePath)}" "${v(inputs.bridgeEntryPath)}" ${runArgs} >> "${v(daemonStdoutPath(inputs.profile))}" 2>> "${v(daemonStderrPath(inputs.profile))}"`,
+    ],
+    { allowChcp: true },
+  );
 }
 
 async function writeLauncherCmd(profile: string, runArgs: string[] = ['run']): Promise<void> {
@@ -68,7 +83,7 @@ async function writeLauncherCmd(profile: string, runArgs: string[] = ['run']): P
   const cmdPath = windowsLauncherCmdPath(profile);
   await mkdir(dirname(cmdPath), { recursive: true });
   await mkdir(daemonLogDir(profile), { recursive: true });
-  await writeFile(cmdPath, content, 'utf8');
+  await writeFile(cmdPath, content, 'utf8'); // no BOM: cmd.exe misreads one
 }
 
 interface SchtasksResult {
@@ -78,11 +93,11 @@ interface SchtasksResult {
 }
 
 function runSchtasks(args: string[]): SchtasksResult {
-  const r = spawnSync('schtasks', args, { encoding: 'utf8' });
+  const r = spawnSync('schtasks', args, { windowsHide: true });
   return {
     ok: r.status === 0,
-    stderr: r.stderr ?? '',
-    stdout: r.stdout ?? '',
+    stderr: decodeChildOutput(r.stderr),
+    stdout: decodeChildOutput(r.stdout),
   };
 }
 
@@ -118,9 +133,31 @@ export function runTask(profile: string): SchtasksResult {
   return runSchtasks(['/Run', '/TN', windowsTaskName(profile)]);
 }
 
-/** End the running instance. Task stays registered for next logon. */
+/**
+ * End the running instance. Task stays registered for next logon.
+ *
+ * `schtasks /End` only terminates the process the task started directly
+ * (cmd.exe running launcher.cmd); the bridge node process it spawned keeps
+ * running. So read the service PID first and kill that whole tree too.
+ */
 export function endTask(profile: string): SchtasksResult {
-  return runSchtasks(['/End', '/TN', windowsTaskName(profile)]);
+  const pid = servicePid(profile);
+  const ended = runSchtasks(['/End', '/TN', windowsTaskName(profile)]);
+  const killed = pid !== undefined && killWindowsProcessTree(pid);
+  return killed && !ended.ok ? { ...ended, ok: true } : ended;
+}
+
+/**
+ * PID of the bridge process the task launched, from the PID file it writes
+ * at startup. Undefined when the file is missing or that process is gone.
+ */
+export function servicePid(profile: string): number | undefined {
+  try {
+    const pid = Number.parseInt(readFileSync(windowsServicePidPath(profile), 'utf8').trim(), 10);
+    return Number.isInteger(pid) && pid > 0 && isProcessAlive(pid) ? pid : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Disable autostart (task stays registered but ONLOGON trigger won't fire). */
@@ -158,19 +195,26 @@ export async function restartTask(profile: string): Promise<SchtasksResult> {
 export function isTaskRegistered(profile: string): boolean {
   const r = spawnSync('schtasks', ['/Query', '/TN', windowsTaskName(profile)], {
     stdio: ['ignore', 'ignore', 'ignore'],
+    windowsHide: true,
   });
   return r.status === 0;
 }
 
 /**
- * Parse `/Query /V /FO LIST` output for the current run state. Looks for
- * `Status: Running` in the verbose listing. Other states include
- * "Ready" (registered, not currently running) and "Disabled".
+ * Whether `/Query /V /FO LIST` output says the task is running. Field labels
+ * and values are localized (`ステータス: 実行中` on Japanese Windows), so the
+ * check keys on `267009` (0x41301, SCHED_S_TASK_RUNNING), which the
+ * "Last Result" field shows while the task runs in every language. The
+ * English `Status: Running` stays as a fallback.
  */
+export function queryOutputSaysRunning(text: string): boolean {
+  return /(^|\D)267009(\D|$)/m.test(text) || /Status:\s+Running/i.test(text);
+}
+
 export function isTaskRunning(profile: string): boolean {
   const r = runSchtasks(['/Query', '/V', '/FO', 'LIST', '/TN', windowsTaskName(profile)]);
   if (!r.ok) return false;
-  return /Status:\s+Running/i.test(r.stdout);
+  return queryOutputSaysRunning(r.stdout);
 }
 
 export function describeTask(profile: string): string {

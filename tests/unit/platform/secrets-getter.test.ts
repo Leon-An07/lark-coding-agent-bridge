@@ -41,6 +41,7 @@ describe('secrets getter wrapper platform output', () => {
         platform: 'win32',
         nodePath: 'C:\\Program Files\\nodejs\\node.exe',
         bridgeEntry: 'C:\\bridge\\bin\\bridge.mjs',
+        batchEnv: {},
       },
     );
 

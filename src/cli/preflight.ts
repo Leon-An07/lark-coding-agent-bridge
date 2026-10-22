@@ -23,6 +23,7 @@ import { withLegacyLarkCliSourceOverlay } from '../lark-cli/legacy-source-overla
 import { writeLarkCliSourceProjection } from '../lark-cli/profile-projection';
 import { mergeProcessEnv, spawnProcess, spawnProcessSync } from '../platform/spawn';
 import { writeFileAtomic } from '../platform/atomic-write';
+import { decodeChildOutput } from '../platform/console-decode';
 
 const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 const BIND_TIMEOUT_MS = 30 * 1000;
@@ -726,7 +727,7 @@ async function runCapture(
   timeoutMs: number,
   env?: NodeJS.ProcessEnv,
 ): Promise<RunResult> {
-  let captured = '';
+  const chunks: Buffer[] = [];
   let timedOut = false;
 
   const exitCode = await new Promise<number | null>((resolve) => {
@@ -734,12 +735,8 @@ async function runCapture(
       env: env ? mergeProcessEnv(process.env, env) : undefined,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    child.stdout?.on('data', (b: Buffer) => {
-      captured += b.toString('utf8');
-    });
-    child.stderr?.on('data', (b: Buffer) => {
-      captured += b.toString('utf8');
-    });
+    child.stdout?.on('data', (b: Buffer) => chunks.push(b));
+    child.stderr?.on('data', (b: Buffer) => chunks.push(b));
 
     const timer = setTimeout(() => {
       timedOut = true;
@@ -756,5 +753,7 @@ async function runCapture(
     });
   });
 
-  return { success: !timedOut && exitCode === 0, output: captured };
+  // Decode once at the end: a multibyte char may straddle two chunks, and
+  // npm/cmd output on CJK Windows is in the OEM codepage, not UTF-8.
+  return { success: !timedOut && exitCode === 0, output: decodeChildOutput(Buffer.concat(chunks)) };
 }

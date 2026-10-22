@@ -1,9 +1,10 @@
-import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import * as lockfile from 'proper-lockfile';
 import type { AppPaths } from '../config/app-paths';
 import type { AgentKind } from '../config/profile-schema';
 import { log } from '../core/logger';
+import { isProcessAlive } from '../platform/spawn';
 
 /** Must match the holder's `stale` in acquireRuntimeLock. lockfile.check's
  * default (10s) equals the holder's mtime refresh period, so a live lock
@@ -127,6 +128,7 @@ export async function checkRuntimeLock(target: string): Promise<{
     if (!meta) {
       return { locked: true, uncertain: true, error: 'missing-or-invalid-runtime-lock-meta' };
     }
+    if (holderIsDead(meta)) return { locked: false };
     return { locked: true, meta };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { locked: false };
@@ -147,7 +149,7 @@ async function acquireRuntimeLock(
 
   let release: () => Promise<void>;
   try {
-    release = await lockfile.lock(meta.target, {
+    release = await lockWithDeadHolderReclaim(meta.target, {
       realpath: false,
       stale: RUNTIME_LOCK_STALE_MS,
       update: 10_000,
@@ -186,6 +188,33 @@ async function acquireRuntimeLock(
       await release();
     },
   };
+}
+
+/**
+ * A lock whose recorded holder process no longer exists (killed with
+ * taskkill /F or kill -9, so it never released) is free. proper-lockfile
+ * would only notice after `stale` ms; without this a `stop` then `start`
+ * inside that window reported "already in use". PID reuse errs safe: a
+ * live PID still counts as a holder.
+ */
+function holderIsDead(meta: RuntimeLockMeta): boolean {
+  return meta.pid !== process.pid && !isProcessAlive(meta.pid);
+}
+
+async function lockWithDeadHolderReclaim(
+  target: string,
+  options: lockfile.LockOptions,
+): Promise<() => Promise<void>> {
+  try {
+    return await lockfile.lock(target, options);
+  } catch (err) {
+    const holder = await readRuntimeLockMeta(target);
+    if (!holder || !holderIsDead(holder)) throw err;
+    log.info('runtime-lock', 'reclaim-dead-holder', { target, pid: holder.pid });
+    await rm(`${target}.lock`, { recursive: true, force: true });
+    await rm(runtimeLockMetaFile(target), { force: true });
+    return lockfile.lock(target, options);
+  }
 }
 
 function isRuntimeLockMeta(value: unknown): value is RuntimeLockMeta {

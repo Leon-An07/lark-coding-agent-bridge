@@ -5,6 +5,7 @@ import type {
   SpawnSyncOptions,
 } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
+import { spawnSync } from 'node:child_process';
 import crossSpawn from 'cross-spawn';
 
 export function spawnProcess(
@@ -33,6 +34,28 @@ export function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): bo
     }
   }
   return child.kill(signal);
+}
+
+/** Whether a process with this PID exists (EPERM = exists, not ours). */
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Windows: force-kill `pid` and every descendant. Only the exit code is
+ * read, because taskkill's text output is localized.
+ */
+export function killWindowsProcessTree(pid: number): boolean {
+  const r = spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  return r.status === 0;
 }
 
 export function spawnProcessSync(

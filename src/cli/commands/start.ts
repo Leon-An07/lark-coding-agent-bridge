@@ -1,4 +1,6 @@
 import dns from 'node:dns';
+import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import os from 'node:os';
 import { createInterface } from 'node:readline';
 import pkg from '../../../package.json';
@@ -108,11 +110,36 @@ export interface StartOptions {
  *    all profiles + a local web console to start/stop/configure them.
  */
 export async function runStart(opts: StartOptions): Promise<void> {
+  recordServicePid(process.env.LARK_CHANNEL_SERVICE_PID_FILE);
+  // Don't leak it to agents and tools this process spawns.
+  delete process.env.LARK_CHANNEL_SERVICE_PID_FILE;
   if (opts.webUi) {
     await runSupervisorConsole(opts);
     return;
   }
   await runClassic(opts);
+}
+
+/**
+ * Under Windows Task Scheduler the launcher names a PID file; write ours so
+ * `stop` / `status` can find this process without parsing localized schtasks
+ * output. Removed on exit.
+ */
+function recordServicePid(pidFile: string | undefined): void {
+  if (!pidFile) return;
+  try {
+    mkdirSync(dirname(pidFile), { recursive: true });
+    writeFileSync(pidFile, `${process.pid}\n`);
+    process.once('exit', () => {
+      try {
+        unlinkSync(pidFile);
+      } catch {
+        /* already gone */
+      }
+    });
+  } catch (err) {
+    log.warn('service', 'pid-file-write-failed', { pidFile, err: String(err) });
+  }
 }
 
 const migrationConflictHandler = async (err: unknown): Promise<boolean> => {

@@ -95,6 +95,15 @@ export function windowsLauncherCmdPath(profile: string = paths.profile): string 
   return join(paths.appDir, 'daemon', serviceProfileId(profile), 'launcher.cmd');
 }
 
+/**
+ * PID file the service-launched bridge writes (path handed over through
+ * `LARK_CHANNEL_SERVICE_PID_FILE` in launcher.cmd). schtasks has no
+ * locale-independent way to report the PID of a running task.
+ */
+export function windowsServicePidPath(profile: string = paths.profile): string {
+  return join(paths.appDir, 'daemon', serviceProfileId(profile), 'service.pid');
+}
+
 // === Daemon log paths (platform-agnostic) ===
 
 /**

@@ -101,3 +101,48 @@ describe('runtime locks', () => {
     });
   });
 });
+
+describe('runtime locks left behind by a killed process', () => {
+  async function leaveLockBehind(target: string, pid: number): Promise<void> {
+    // On-disk state of a holder killed with taskkill /F or kill -9: a fresh
+    // proper-lockfile dir plus our meta sidecar, never released.
+    await mkdir(`${target}.lock`, { recursive: true });
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(target, '');
+    await writeFile(
+      `${target}.meta.json`,
+      JSON.stringify({ kind: 'profile', target, profile: 'claude', agentKind: 'claude', pid, startedAt: new Date().toISOString() }),
+    );
+  }
+
+  it('reclaims a fresh lock whose holder process is gone', async () => {
+    const { spawnSync } = await import('node:child_process');
+    const { acquireProfileRuntimeLock, checkRuntimeLock } = await import('../../../src/runtime/locks');
+    const root = await makeRoot();
+    const paths = resolveAppPaths({ rootDir: root, profile: 'claude' });
+    const dead = spawnSync(process.execPath, ['-e', '']).pid as number;
+    await leaveLockBehind(paths.profileLockFile, dead);
+
+    expect((await checkRuntimeLock(paths.profileLockFile)).locked).toBe(false);
+    const lock = await acquireProfileRuntimeLock(paths, 'claude');
+    expect((await checkRuntimeLock(paths.profileLockFile)).meta?.pid).toBe(process.pid);
+    await lock.release();
+  });
+
+  it('still refuses a lock whose holder process is alive', async () => {
+    const { spawn } = await import('node:child_process');
+    const { acquireProfileRuntimeLock, checkRuntimeLock, RuntimeLockConflictError } = await import(
+      '../../../src/runtime/locks'
+    );
+    const root = await makeRoot();
+    const paths = resolveAppPaths({ rootDir: root, profile: 'claude' });
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+    try {
+      await leaveLockBehind(paths.profileLockFile, holder.pid as number);
+      expect((await checkRuntimeLock(paths.profileLockFile)).locked).toBe(true);
+      await expect(acquireProfileRuntimeLock(paths, 'claude')).rejects.toBeInstanceOf(RuntimeLockConflictError);
+    } finally {
+      holder.kill('SIGKILL');
+    }
+  });
+});
