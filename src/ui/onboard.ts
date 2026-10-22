@@ -11,7 +11,7 @@ import {
   writeActiveProfile,
 } from '../config/profile-store';
 import type { AgentKind } from '../config/profile-schema';
-import { secretKeyForApp, type AppConfig, type TenantBrand } from '../config/schema';
+import { secretKeyForApp, withInitialLanguage, type AppConfig, type TenantBrand } from '../config/schema';
 import { buildEncryptedAccountConfig } from '../config/store';
 import { createBootstrapProfileConfig } from '../cli/profile-bootstrap';
 import { validateAppCredentials } from '../utils/feishu-auth';
@@ -154,7 +154,7 @@ export async function writeNewProfile(
   await withConfigFileLock(appPaths.configFile, async () => {
     const root = await loadRootConfig(appPaths.configFile);
     if (!root) {
-      await saveRootConfig(createRootConfig(profile, profileConfig, encrypted.secrets), appPaths.configFile);
+      await saveRootConfig(createRootConfig(profile, withInitialLanguage(profileConfig), encrypted.secrets), appPaths.configFile);
       return;
     }
     if (root.profiles[profile]) {

@@ -58,13 +58,29 @@ describe('detectOsLocale', () => {
     expect(detectOsLocale({ LC_ALL: 'POSIX', LANG: 'ja_JP.UTF-8' }, 'en-US')).toBe('ja-JP');
   });
 
-  it('gives a config with no language preference the OS locale', async () => {
+  it('keeps zh-CN for an existing config with no language preference', async () => {
     const { getLanguage } = await import('../../../src/config/schema.js');
     const saved = process.env.LC_ALL;
     process.env.LC_ALL = 'ja_JP.UTF-8';
     try {
-      expect(getLanguage({} as never)).toBe('ja-JP');
+      expect(getLanguage({} as never)).toBe('zh-CN');
       expect(getLanguage({ preferences: { language: 'en-US' } } as never)).toBe('en-US');
+    } finally {
+      process.env.LC_ALL = saved;
+    }
+  });
+
+  it('stamps a new install with the OS locale, but keeps an explicit one', async () => {
+    const { withInitialLanguage } = await import('../../../src/config/schema.js');
+    const saved = process.env.LC_ALL;
+    process.env.LC_ALL = 'ja_JP.UTF-8';
+    try {
+      expect(withInitialLanguage<{ preferences?: { language?: string } }>({}).preferences?.language).toBe('ja-JP');
+      expect(withInitialLanguage({ preferences: { effort: 'high' } }).preferences).toEqual({
+        effort: 'high',
+        language: 'ja-JP',
+      });
+      expect(withInitialLanguage({ preferences: { language: 'en-US' } }).preferences?.language).toBe('en-US');
     } finally {
       process.env.LC_ALL = saved;
     }

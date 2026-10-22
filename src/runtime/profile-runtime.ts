@@ -37,7 +37,7 @@ import {
 } from '../config/profile-schema';
 import { permissionsToLegacySandbox } from '../config/permissions';
 import type { AppConfig, SecretInput, TenantBrand } from '../config/schema';
-import { getLanguage, isComplete, isSecretRef, secretKeyForApp } from '../config/schema';
+import { getLanguage, isComplete, isSecretRef, secretKeyForApp, withInitialLanguage } from '../config/schema';
 import { detectOsLocale, msgs, setActiveLocale } from '../i18n';
 import { resolveAppSecret } from '../config/secret-resolver';
 import {
@@ -238,7 +238,7 @@ async function resolveProfileRuntimeInner(
     defaultWorkspace: appPaths.defaultWorkspaceDir,
     profileDir: appPaths.profileDir,
   });
-  const root = createRootConfig(profile, profileConfig, encrypted.secrets);
+  const root = createRootConfig(profile, withInitialLanguage(profileConfig), encrypted.secrets);
   await saveRootConfig(root, configPath);
   await writeActiveProfile(appPaths.rootDir, profile);
   console.log(msgs().cli.configSaved(configPath));

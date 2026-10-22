@@ -319,9 +319,22 @@ export function getAgentStopGraceMs(cfg: AppConfig): number {
   return Math.min(30_000, Math.max(100, Math.floor(raw)));
 }
 
-/** UI language: preferences.language → the OS locale → zh-CN. */
+/**
+ * UI language: preferences.language → zh-CN. The OS locale is NOT consulted
+ * here, so existing installs without a stored preference keep Chinese. New
+ * installs get the OS locale written in at creation (`withInitialLanguage`).
+ */
 export function getLanguage(cfg: AppConfig): Locale {
-  return normalizeLocale(cfg.preferences?.language) ?? detectOsLocale() ?? DEFAULT_LOCALE;
+  return normalizeLocale(cfg.preferences?.language) ?? DEFAULT_LOCALE;
+}
+
+/** Stamp a brand-new install's config with the OS locale, unless set. */
+export function withInitialLanguage<T extends { preferences?: AppPreferences }>(cfg: T): T {
+  if (normalizeLocale(cfg.preferences?.language)) return cfg;
+  return {
+    ...cfg,
+    preferences: { ...cfg.preferences, language: detectOsLocale() ?? DEFAULT_LOCALE },
+  };
 }
 
 /**
