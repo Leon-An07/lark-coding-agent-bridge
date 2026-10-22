@@ -352,6 +352,13 @@ export const cliZh = {
 
   // ── codex session history ──
   emptySessionPreview: '(空会话)',
+
+  // ── skills install ──
+  skillsUnknownAgent: (agent: string, known: string[]) => `✗ 不支持的 agent: ${agent}(可选: ${known.join(', ')})`,
+  skillsNoAgentFound: (known: string[]) => `✗ PATH 中没有找到 agent(${known.join(', ')})。请用 --agent 或 --dest 指定。`,
+  skillsInstallingFor: (target: string, dir: string) => `安装 skills 到 ${target}: ${dir}`,
+  skillsInstalled: (skill: string, updated: boolean) => `  ✓ ${skill}${updated ? '(已覆盖更新)' : ''}`,
+  skillsSkippedExisting: (skill: string) => `  - ${skill} 已存在,跳过(用 --force 覆盖)`,
 };
 
 export const cliEn: typeof cliZh = {
@@ -722,6 +729,13 @@ export const cliEn: typeof cliZh = {
 
   // ── codex session history ──
   emptySessionPreview: '(empty session)',
+
+  // ── skills install ──
+  skillsUnknownAgent: (agent: string, known: string[]) => `✗ Unsupported agent: ${agent} (choose: ${known.join(', ')})`,
+  skillsNoAgentFound: (known: string[]) => `✗ No agent found on PATH (${known.join(', ')}). Pass --agent or --dest.`,
+  skillsInstallingFor: (target: string, dir: string) => `Installing skills for ${target}: ${dir}`,
+  skillsInstalled: (skill: string, updated: boolean) => `  ✓ ${skill}${updated ? ' (replaced)' : ''}`,
+  skillsSkippedExisting: (skill: string) => `  - ${skill} already exists, skipped (use --force to replace)`,
 };
 
 export const cliJa: typeof cliZh = {
@@ -1105,4 +1119,11 @@ export const cliJa: typeof cliZh = {
 
   // ── codex session history ──
   emptySessionPreview: '(空のセッション)',
+
+  // ── skills install ──
+  skillsUnknownAgent: (agent: string, known: string[]) => `✗ 対応していない agent です: ${agent}(選択肢: ${known.join(', ')})`,
+  skillsNoAgentFound: (known: string[]) => `✗ PATH に agent(${known.join(', ')})が見つかりません。--agent または --dest を指定してください。`,
+  skillsInstallingFor: (target: string, dir: string) => `${target} に skills をインストールします: ${dir}`,
+  skillsInstalled: (skill: string, updated: boolean) => `  ✓ ${skill}${updated ? '(上書きしました)' : ''}`,
+  skillsSkippedExisting: (skill: string) => `  - ${skill} は既にあるためスキップしました(--force で上書きします)`,
 };

@@ -10,6 +10,7 @@ import {
   runSecretsSet,
 } from './commands/secrets';
 import { runSendCard } from './commands/send-card';
+import { runSkillsInstall } from './commands/skills';
 import {
   runProfileCreate,
   runProfileExport,
@@ -295,6 +296,18 @@ secrets
   .option('--profile <name>', h.optProfileDefault)
   .action(async (opts: { appId: string; profile?: string }) => {
     await runSecretsRemove(opts.appId, { profile: opts.profile });
+  });
+
+const skills = program.command('skills').description(h.skills);
+
+skills
+  .command('install')
+  .description(h.skillsInstall)
+  .option('--agent <kind>', h.optSkillsAgent)
+  .option('--dest <dir>', h.optSkillsDest)
+  .option('--force', h.optSkillsForce)
+  .action(async (opts: { agent?: string; dest?: string; force?: boolean }) => {
+    await runSkillsInstall(opts);
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {

@@ -63,6 +63,11 @@ export const helpZh = {
   optVersion: '显示版本号',
   optHelp: '显示命令帮助',
   helpCommand: '显示某个命令的帮助',
+  skills: '管理随 bridge 附带的 agent skills',
+  skillsInstall: '把附带的 skills 安装到已安装 agent 的 skills 目录(Claude Code、Codex)',
+  optSkillsAgent: '只安装给这个 agent(claude 或 codex);默认安装给 PATH 中找到的所有 agent',
+  optSkillsDest: '安装到这个目录,而不是 agent 的默认目录',
+  optSkillsForce: '覆盖已存在的同名 skill',
 };
 
 export const helpEn: typeof helpZh = {
@@ -127,6 +132,11 @@ export const helpEn: typeof helpZh = {
   optVersion: 'output the version number',
   optHelp: 'display help for command',
   helpCommand: 'display help for command',
+  skills: 'Manage the agent skills bundled with the bridge',
+  skillsInstall: "Install the bundled skills into each installed agent's skills directory (Claude Code, Codex)",
+  optSkillsAgent: 'install for this agent only (claude or codex); default: every agent found on PATH',
+  optSkillsDest: "install into this directory instead of the agent's default",
+  optSkillsForce: 'replace skills that already exist',
 };
 
 export const helpJa: typeof helpZh = {
@@ -191,4 +201,9 @@ export const helpJa: typeof helpZh = {
   optVersion: 'バージョン番号を表示します',
   optHelp: 'コマンドのヘルプを表示します',
   helpCommand: 'コマンドのヘルプを表示します',
+  skills: 'bridge に同梱された agent skills を管理します',
+  skillsInstall: '同梱の skills を、インストール済み agent の skills ディレクトリ(Claude Code、Codex)にインストールします',
+  optSkillsAgent: 'この agent だけにインストールします(claude または codex)。既定は PATH で見つかったすべての agent',
+  optSkillsDest: 'agent の既定ではなく、このディレクトリにインストールします',
+  optSkillsForce: '既にある同名の skill を上書きします',
 };
