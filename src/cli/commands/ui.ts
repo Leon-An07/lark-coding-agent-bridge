@@ -47,7 +47,7 @@ function openBrowser(url: string): void {
         ? ['cmd', ['/c', 'start', '', url]]
         : ['xdg-open', [url]];
   try {
-    const child = spawnProcess(cmd as string, args as string[], { stdio: 'ignore' });
+    const child = spawnProcess(cmd as string, args as string[], { stdio: 'ignore', windowsHide: false });
     child.on('error', () => {
       console.log(msgs().cli.uiOpenManually);
     });

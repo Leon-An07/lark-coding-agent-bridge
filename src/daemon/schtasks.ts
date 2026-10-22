@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { userInfo } from 'node:os';
@@ -160,7 +160,24 @@ export async function installTask(
   const xmlPath = join(dirname(windowsLauncherCmdPath(profile)), 'task.xml');
   const xml = buildTaskXml({ userId: currentWindowsUserId(), command: windowsLauncherCmdPath(profile) });
   await writeFile(xmlPath, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(xml, 'utf16le')]));
-  return runSchtasks(['/Create', '/F', '/TN', windowsTaskName(profile), '/XML', xmlPath]);
+  const fromXml = runSchtasks(['/Create', '/F', '/TN', windowsTaskName(profile), '/XML', xmlPath]);
+  if (fromXml.ok) return fromXml;
+  // Fallback: the pre-XML registration, which works for admin accounts.
+  const fromFlags = runSchtasks([
+    '/Create',
+    '/F',
+    '/SC',
+    'ONLOGON',
+    '/RL',
+    'LIMITED',
+    '/TN',
+    windowsTaskName(profile),
+    '/TR',
+    `"${windowsLauncherCmdPath(profile)}"`,
+  ]);
+  return fromFlags.ok
+    ? fromFlags
+    : { ...fromFlags, stderr: [fromXml.stderr, fromFlags.stderr].filter(Boolean).join('\n') };
 }
 
 /** Start the task now (regardless of trigger). */
@@ -176,9 +193,12 @@ export function runTask(profile: string): SchtasksResult {
  * running. So read the service PID first and kill that whole tree too.
  */
 export function endTask(profile: string): SchtasksResult {
-  const pid = servicePid(profile);
+  // The PID file outlives a force-killed bridge, and Windows reuses PIDs
+  // quickly, so trust it only while the task is actually running.
+  const pid = isTaskRunning(profile) ? servicePid(profile) : undefined;
   const ended = runSchtasks(['/End', '/TN', windowsTaskName(profile)]);
   const killed = pid !== undefined && killWindowsProcessTree(pid);
+  if (killed) rmSync(windowsServicePidPath(profile), { force: true });
   return killed && !ended.ok ? { ...ended, ok: true } : ended;
 }
 
@@ -272,5 +292,6 @@ export async function deleteTask(profile: string): Promise<SchtasksResult> {
   if (existsSync(windowsLauncherCmdPath(profile))) {
     await rm(windowsLauncherCmdPath(profile), { force: true });
   }
+  await rm(join(dirname(windowsLauncherCmdPath(profile)), 'task.xml'), { force: true });
   return r;
 }

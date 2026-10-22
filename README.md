@@ -340,7 +340,7 @@ Most Windows reports upstream (see #128 and #131) trace back to a few causes. Th
 
 **Background service (`start`).**
 
-- `start` registers a Task Scheduler task for your own account only, so it no longer needs an administrator shell. The task has no 72-hour limit and also runs on battery.
+- `start` registers a Task Scheduler task for your own account only, so it should no longer need an administrator shell (not yet tested on a standard account; if it fails, the old admin-only registration is tried next). `start` re-registers the task each time, so existing installs pick this up. The task has no 72-hour limit and also runs on battery.
 - `stop` now ends the bridge's whole process tree. Before, `schtasks /End` left `node.exe` running, and the next `start` reported "already in use".
 - The service task still opens a console window. Closing that window stops the bot.
 - If a restart still reports "already in use", run `lark-channel-bridge ps` and `lark-channel-bridge kill <id>`. Do not end the process from Task Manager.

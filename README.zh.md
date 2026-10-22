@@ -340,7 +340,7 @@ grep '"event":"enter"' ~/.lark-channel/profiles/<profile>/logs/bridge-$(date +%Y
 
 **后台服务（`start`）**
 
-- `start` 只为当前账号注册计划任务，不再需要管理员终端。任务没有 72 小时的运行上限，用电池时也会运行。
+- `start` 只为当前账号注册计划任务，应该不再需要管理员终端（尚未在标准账号上实测；失败时会回退到旧的、需要管理员的注册方式）。每次 `start` 都会重新注册任务，已有安装也会生效。任务没有 72 小时的运行上限，用电池时也会运行。
 - `stop` 现在会结束 bridge 的整个进程树。以前 `schtasks /End` 会留下 `node.exe`，下次 `start` 报"已被占用"。
 - 后台任务仍会打开一个控制台窗口。关闭该窗口会停止 bot。
 - 重启后仍报"已被占用"时，运行 `lark-channel-bridge ps` 和 `lark-channel-bridge kill <id>`。不要用任务管理器结束进程。
