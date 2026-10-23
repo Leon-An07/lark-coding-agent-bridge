@@ -1,3 +1,4 @@
+import { decodeChildOutput } from '../platform/console-decode';
 import { resolveAppPaths } from '../config/app-paths';
 import { buildLarkChannelEnv } from '../agent/lark-channel-env';
 import { mergeProcessEnv, spawnProcess } from '../platform/spawn';
@@ -77,26 +78,27 @@ export type LarkCliExec = (
 
 const defaultExec: LarkCliExec = (args, env, timeoutMs) =>
   new Promise<ExecResult>((resolve) => {
-    let stdout = '';
-    let stderr = '';
+    const outChunks: Buffer[] = [];
+    const err_: Buffer[] = [];
+    const text = (b: Buffer[]) => decodeChildOutput(Buffer.concat(b));
     let timedOut = false;
     const child = spawnProcess('lark-cli', args, {
       env: mergeProcessEnv(process.env, env),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    child.stdout?.on('data', (b: Buffer) => (stdout += b.toString('utf8')));
-    child.stderr?.on('data', (b: Buffer) => (stderr += b.toString('utf8')));
+    child.stdout?.on('data', (b: Buffer) => outChunks.push(b));
+    child.stderr?.on('data', (b: Buffer) => err_.push(b));
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
     }, timeoutMs);
     child.once('error', (err) => {
       clearTimeout(timer);
-      resolve({ code: null, stdout, stderr: stderr || String(err), timedOut });
+      resolve({ code: null, stdout: text(outChunks), stderr: text(err_) || String(err), timedOut });
     });
     child.once('exit', (code) => {
       clearTimeout(timer);
-      resolve({ code, stdout, stderr, timedOut });
+      resolve({ code, stdout: text(outChunks), stderr: text(err_), timedOut });
     });
   });
 

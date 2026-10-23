@@ -1,5 +1,6 @@
 import { registerApp } from '@larksuite/channel';
 import qrcode from 'qrcode-terminal';
+import { windowsOemCodepage } from '../platform/console-decode';
 import type { AppConfig, TenantBrand } from '../config/schema';
 import { msgs } from '../i18n';
 
@@ -55,6 +56,25 @@ export async function requestScopeGrantLink(opts: {
   });
 }
 
+/**
+ * The compact QR uses half-block characters (▀ ▄ █). These are East Asian
+ * "ambiguous width": the legacy console on CJK Windows draws them two
+ * cells wide, which distorts the code so phones can't scan it. The full-size
+ * QR draws with coloured spaces, which are always one cell. Windows
+ * Terminal (WT_SESSION set) draws ambiguous characters narrow, so compact is
+ * fine there.
+ */
+export function compactQrIsSafe(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  oemCodepage: number | undefined = windowsOemCodepage(),
+): boolean {
+  if (platform !== 'win32' || env.WT_SESSION) return true;
+  return !(oemCodepage !== undefined && CJK_CODEPAGES.has(oemCodepage));
+}
+
+const CJK_CODEPAGES = new Set([932, 936, 949, 950]);
+
 export async function runRegistrationWizard(): Promise<AppConfig> {
   console.log(msgs().cli.wizardIntro);
 
@@ -63,7 +83,7 @@ export async function runRegistrationWizard(): Promise<AppConfig> {
     onQRCodeReady: (info) => {
       const m = msgs();
       console.log(m.cli.wizardScanQr);
-      qrcode.generate(info.url, { small: true });
+      qrcode.generate(info.url, { small: compactQrIsSafe() });
       const mins = Math.max(1, Math.round(info.expireIn / 60));
       console.log(m.cli.wizardQrExpiry(mins));
       console.log(m.cli.wizardOpenInBrowser(info.url));

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
+import { decodeChildOutput } from '../platform/console-decode';
 import { spawnProcess, type SpawnedProcessByStdio } from '../platform/spawn';
 import { getSecret, type KeystorePaths } from './keystore';
 import { paths } from './paths';
@@ -178,7 +179,7 @@ async function spawnExecProvider(pc: ProviderConfig, ref: SecretRef): Promise<st
     }) as SpawnedProcessByStdio<Writable, Readable, Readable>;
 
     let stdout = '';
-    let stderr = '';
+    const stderrChunks: Buffer[] = [];
     let truncated = false;
     let settled = false;
 
@@ -199,7 +200,7 @@ async function spawnExecProvider(pc: ProviderConfig, ref: SecretRef): Promise<st
       stdout += chunk.toString('utf8');
     });
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
+      stderrChunks.push(chunk);
     });
 
     child.on('error', (err) => {
@@ -218,7 +219,8 @@ async function spawnExecProvider(pc: ProviderConfig, ref: SecretRef): Promise<st
         return;
       }
       if (code !== 0) {
-        const detail = stderr.trim() ? `: ${stderr.trim().slice(0, 200)}` : '';
+        const stderr = decodeChildOutput(Buffer.concat(stderrChunks)).trim();
+        const detail = stderr ? `: ${stderr.slice(0, 200)}` : '';
         reject(new Error(`exec provider exited with code ${code}${detail}`));
         return;
       }

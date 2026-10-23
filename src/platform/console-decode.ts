@@ -88,6 +88,43 @@ export function windowsOemCodepage(): number | undefined {
   return cachedOemCodepage ?? undefined;
 }
 
+/**
+ * Streaming variant: feed raw chunks, get back complete decoded lines
+ * (without the trailing newline). Splitting happens on bytes, so a
+ * multi-byte character cut across chunks is never decoded half-way.
+ */
+export class ChildLineDecoder {
+  private pending: Buffer = Buffer.alloc(0);
+
+  constructor(private readonly codepage: number | undefined = windowsOemCodepage()) {}
+
+  push(chunk: Buffer): string[] {
+    this.pending = this.pending.length ? Buffer.concat([this.pending, chunk]) : chunk;
+    const lines: string[] = [];
+    let nl = this.pending.indexOf(0x0a);
+    while (nl !== -1) {
+      lines.push(decodeConsoleBytes(this.pending.subarray(0, nl), this.codepage).replace(/\r$/, ''));
+      this.pending = this.pending.subarray(nl + 1);
+      nl = this.pending.indexOf(0x0a);
+    }
+    return lines;
+  }
+}
+
+/**
+ * cmd.exe's "command not found" line, in the languages we ship for. The
+ * Japanese and Chinese texts only match once the line is decoded with the
+ * OEM codepage (see ChildLineDecoder).
+ */
+export function isWindowsCommandNotFoundLine(line: string, platform = process.platform): boolean {
+  return (
+    platform === 'win32' &&
+    /is not recognized as an internal or external command|operable program or batch file|内部コマンドまたは外部コマンド|として認識されていません|不是内部或外部命令|可运行的程序/i.test(
+      line,
+    )
+  );
+}
+
 /** Decode child-process output captured on this machine. */
 export function decodeChildOutput(bytes: Uint8Array | string | null | undefined): string {
   if (bytes == null) return '';

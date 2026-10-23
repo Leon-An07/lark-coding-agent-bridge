@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
+import { ChildLineDecoder, decodeChildOutput, isWindowsCommandNotFoundLine } from '../../platform/console-decode';
 import { log } from '../../core/logger';
 import {
   killProcessTree,
@@ -172,7 +173,7 @@ export class ClaudeAdapter implements AgentAdapter {
     const stderrChunks: Buffer[] = [];
     let stderrBytes = 0;
     let runtimeError: Error | null = null;
-    let stderrBuffer = '';
+    const stderrLines = new ChildLineDecoder();
     child.stderr.on('data', (chunk: Buffer) => {
       stderrChunks.push(chunk);
       stderrBytes += chunk.length;
@@ -180,18 +181,13 @@ export class ClaudeAdapter implements AgentAdapter {
         stderrBytes -= stderrChunks[0]!.length;
         stderrChunks.shift();
       }
-      stderrBuffer += chunk.toString('utf8');
-      let nl = stderrBuffer.indexOf('\n');
-      while (nl !== -1) {
-        const line = stderrBuffer.slice(0, nl);
-        stderrBuffer = stderrBuffer.slice(nl + 1);
+      for (const line of stderrLines.push(chunk)) {
         if (line.trim()) log.warn('agent', 'stderr', { line });
         if (isWindowsCommandNotFoundLine(line)) {
           runtimeError = new Error(`failed to spawn claude: ${line.trim()}`);
           child.stdout.destroy();
           child.kill();
         }
-        nl = stderrBuffer.indexOf('\n');
       }
     });
 
@@ -331,7 +327,7 @@ async function* createEventStream(
 
   const runtimeError = getError();
   if (exitCode !== 0 && exitCode !== null) {
-    const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
+    const stderr = decodeChildOutput(Buffer.concat(stderrChunks)).trim();
     const detail = stderr ? `: ${stderr.slice(0, 500)}` : '';
     yield {
       type: 'error',
@@ -377,9 +373,3 @@ function writeSystemPromptFile(content: string): { path: string; cleanup: () => 
   };
 }
 
-function isWindowsCommandNotFoundLine(line: string): boolean {
-  return (
-    process.platform === 'win32' &&
-    /is not recognized as an internal or external command|operable program or batch file/i.test(line)
-  );
-}

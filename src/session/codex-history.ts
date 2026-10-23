@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import { join } from 'node:path';
+import { decodeChildOutput } from '../platform/console-decode';
 import { msgs } from '../i18n';
 import {
   mergeProcessEnv,
@@ -144,7 +145,7 @@ export async function listCodexThreadHistory(
 
     child.once('exit', (code) => {
       if (settled) return;
-      const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
+      const stderr = decodeChildOutput(Buffer.concat(stderrChunks)).trim();
       reject(
         new CodexHistoryError(
           'spawn-failed',

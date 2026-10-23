@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { decodeConsoleBytes } from '../../../src/platform/console-decode.js';
+import {
+  ChildLineDecoder,
+  decodeConsoleBytes,
+  isWindowsCommandNotFoundLine,
+} from '../../../src/platform/console-decode.js';
+import { compactQrIsSafe } from '../../../src/bot/wizard.js';
 
 // Byte fixtures produced outside the code under test:
 //   python3 -c "print('実行中'.encode('cp932').hex())"
@@ -34,5 +39,55 @@ describe('decodeConsoleBytes', () => {
   it('falls back to UTF-8 when the codepage is unknown or absent', () => {
     expect(decodeConsoleBytes(Buffer.from('ok ✓', 'utf8'), undefined)).toBe('ok ✓');
     expect(decodeConsoleBytes(Buffer.from('ok', 'utf8'), 437)).toBe('ok');
+  });
+});
+
+// cmd.exe on Japanese Windows when `claude` is not on PATH (CP932, two lines):
+//   'claude' は、内部コマンドまたは外部コマンド、
+//   操作可能なプログラムまたはバッチ ファイルとして認識されていません。
+const CP932_NOT_FOUND = Buffer.from(
+  '27636c61756465272082cd814193e095948352837d8393836882dc82bd82cd8a4f95948352837d8393836881410d0a' +
+    '91808dec89c2945c82c88376838d834f8389838082dc82bd82cd836f8362836020837483408343838b82c682b582c494468eaf82b382ea82c482a282dc82b982f181420d0a',
+  'hex',
+);
+
+describe('ChildLineDecoder', () => {
+  it('decodes CP932 lines even when a chunk splits a character', () => {
+    const decoder = new ChildLineDecoder(932);
+    const cut = 10; // between the two bytes of 'は' (82 | cd)
+    const lines = [...decoder.push(CP932_NOT_FOUND.subarray(0, cut)), ...decoder.push(CP932_NOT_FOUND.subarray(cut))];
+    expect(lines).toEqual([
+      "'claude' は、内部コマンドまたは外部コマンド、",
+      '操作可能なプログラムまたはバッチ ファイルとして認識されていません。',
+    ]);
+  });
+
+  it('holds back an unfinished line until its newline arrives', () => {
+    const decoder = new ChildLineDecoder(932);
+    expect(decoder.push(Buffer.from('partial', 'utf8'))).toEqual([]);
+    expect(decoder.push(Buffer.from(' line\n', 'utf8'))).toEqual(['partial line']);
+  });
+});
+
+describe('isWindowsCommandNotFoundLine', () => {
+  it('matches the English, Japanese and Chinese cmd.exe texts on win32 only', () => {
+    expect(isWindowsCommandNotFoundLine("'claude' is not recognized as an internal or external command,", 'win32')).toBe(true);
+    expect(isWindowsCommandNotFoundLine("'claude' は、内部コマンドまたは外部コマンド、", 'win32')).toBe(true);
+    expect(isWindowsCommandNotFoundLine("'claude' 不是内部或外部命令，也不是可运行的程序", 'win32')).toBe(true);
+    expect(isWindowsCommandNotFoundLine("'claude' は、内部コマンドまたは外部コマンド、", 'darwin')).toBe(false);
+    expect(isWindowsCommandNotFoundLine('ordinary stderr line', 'win32')).toBe(false);
+  });
+});
+
+describe('compactQrIsSafe', () => {
+  it('avoids half-block QR on the legacy console of CJK Windows', () => {
+    expect(compactQrIsSafe('win32', {}, 932)).toBe(false);
+    expect(compactQrIsSafe('win32', {}, 936)).toBe(false);
+  });
+
+  it('keeps the compact QR on Windows Terminal, non-CJK Windows and other OSes', () => {
+    expect(compactQrIsSafe('win32', { WT_SESSION: 'x' }, 932)).toBe(true);
+    expect(compactQrIsSafe('win32', {}, 437)).toBe(true);
+    expect(compactQrIsSafe('darwin', {}, undefined)).toBe(true);
   });
 });
