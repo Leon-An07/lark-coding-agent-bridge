@@ -51,14 +51,16 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.4.0",
-    "@larksuite/channel": "^0.6.0",
+    "@larksuiteoapi/node-sdk": "^1.73.1",
     "commander": "^12.1.0",
     "cross-spawn": "^7.0.6",
     "graceful-fs": "^4.2.11",
+    "https-proxy-agent": "^9.0.0",
     "proper-lockfile": "^4.1.2",
     "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
+    "@larksuite/channel": "0.6.1",
     "@radix-ui/react-dialog": "^1.1.19",
     "@radix-ui/react-label": "^2.1.11",
     "@radix-ui/react-select": "^2.3.3",
