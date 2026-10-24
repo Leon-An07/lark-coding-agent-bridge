@@ -243,15 +243,12 @@ async function runSupervisorConsole(opts: StartOptions): Promise<void> {
     log.warn('ui', 'server-start-failed', { err: String(err) });
   }
 
-  // Auto-start only the active profile; others start on demand from the console.
-  try {
-    await supervisor.startProfile(appPaths.profile);
-    console.log(msgs().cli.runProfileOnline(appPaths.profile));
-  } catch (err) {
-    console.warn(
-      msgs().cli.activeProfileStartFailed(appPaths.profile, err instanceof Error ? err.message : String(err)),
-    );
-    log.warn('supervisor', 'active-start-failed', { profile: appPaths.profile, err: String(err) });
+  // Auto-start every profile, the active one first; a failure skips only that profile.
+  const boot = await supervisor.startAll(appPaths.profile);
+  for (const profile of boot.started) console.log(msgs().cli.runProfileOnline(profile));
+  for (const { profile, error } of boot.failed) {
+    console.warn(msgs().cli.profileAutoStartFailed(profile, error));
+    log.warn('supervisor', 'auto-start-failed', { profile, err: error });
   }
 
   await parkWithShutdown(supervisor, appPaths, uiServer, hostLock);
