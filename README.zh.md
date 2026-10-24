@@ -27,11 +27,13 @@
 
 ## 安装
 
+本 fork 通过 [GitHub Releases](https://github.com/Leon-An07/lark-coding-agent-bridge/releases) 附带的安装包分发，没有发布到 npm。`npm i -g lark-channel-bridge` 装到的是上游的包，不包含本 fork 的修复。
+
 ```bash
-npm i -g lark-channel-bridge
-# 或
-pnpm add -g lark-channel-bridge
+npm i -g https://github.com/Leon-An07/lark-coding-agent-bridge/releases/latest/download/lark-channel-bridge.tgz
 ```
+
+升级时再执行一次同样的命令即可。需要固定版本时，把 `latest/download` 换成 `download/<tag>`，例如 `download/v0.7.1`。
 
 ## 首次启动
 
@@ -328,7 +330,7 @@ grep '"event":"enter"' ~/.lark-channel/profiles/<profile>/logs/bridge-$(date +%Y
 **安装与运行**
 
 - 使用 Node 20.12 或更高版本。更旧的版本启动时会报 `styleText` 错误。
-- 使用 `start` 前，先用 `npm install -g lark-channel-bridge` 全局安装。通过 `npx` 启动的服务会在 npm 清理缓存后失效。
+- 使用 `start` 前，先按[安装](#安装)一节全局安装。通过 `npx` 启动的服务会在 npm 清理缓存后失效。
 - 后台服务实在跑不起来时，在终端里运行 `lark-channel-bridge run`。关闭该终端会停止 bot。
 
 **日文 / 中文 Windows**
@@ -363,6 +365,16 @@ pnpm build
 ```
 
 `pnpm test` 包含 unit、integration 和 process-level adapter 测试。CI 在 macOS、Ubuntu、Windows 上执行 `pnpm install --frozen-lockfile`、`pnpm test`、`pnpm typecheck` 和 `pnpm build`。
+
+发布新版本：
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+npm pack   # 生成 lark-channel-bridge-<version>.tgz
+```
+
+新建一个标签为 `v<version>` 的 GitHub Release，把这个 tgz 重命名为 `lark-channel-bridge.tgz` 后作为附件上传，这样[安装](#安装)一节里的 `latest/download` 链接始终指向最新版。打过补丁的 `@larksuite/channel` 已经打进 `dist/`，用 npm 安装也能拿到和 pnpm 开发环境一样的修复。
 
 ## 可选：遥测（Telemetry）
 
