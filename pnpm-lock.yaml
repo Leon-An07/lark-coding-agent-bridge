@@ -16,9 +16,9 @@ importers:
       '@clack/prompts':
         specifier: ^1.4.0
         version: 1.7.0
-      '@larksuite/channel':
-        specifier: ^0.6.0
-        version: 0.6.1(patch_hash=ee792eff57d46497d07566052cc2a1bfbcbbcc77d274f962dd511c4b0cefea97)
+      '@larksuiteoapi/node-sdk':
+        specifier: ^1.73.1
+        version: 1.75.0
       commander:
         specifier: ^12.1.0
         version: 12.1.0
@@ -28,6 +28,9 @@ importers:
       graceful-fs:
         specifier: ^4.2.11
         version: 4.2.11
+      https-proxy-agent:
+        specifier: ^9.0.0
+        version: 9.1.0
       proper-lockfile:
         specifier: ^4.1.2
         version: 4.1.2
@@ -35,6 +38,9 @@ importers:
         specifier: ^0.12.0
         version: 0.12.0
     devDependencies:
+      '@larksuite/channel':
+        specifier: 0.6.1
+        version: 0.6.1(patch_hash=ee792eff57d46497d07566052cc2a1bfbcbbcc77d274f962dd511c4b0cefea97)
       '@radix-ui/react-dialog':
         specifier: ^1.1.19
         version: 1.1.23(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
