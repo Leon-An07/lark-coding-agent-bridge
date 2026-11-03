@@ -1,0 +1,59 @@
+diff --git a/es/index.js b/es/index.js
+index 90cd35c29d25b6d0111473d5a22967c56da56d3d..53b1184448928c7c86bd59d5451187f78b5efd06 100644
+--- a/es/index.js
++++ b/es/index.js
+@@ -102385,6 +102385,9 @@ class WSClient {
+         this.onReconnected = onReconnected;
+         this.handshakeTimeoutMs = handshakeTimeoutMs;
+         this.pingTimeoutSec = (_a = userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.pingTimeout) !== null && _a !== void 0 ? _a : 0;
++        // Client-side cap on the server-assigned ping interval (seconds). Keeps
++        // the socket warm through middleboxes that drop idle flows sooner.
++        this.pingIntervalCapMs = ((userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.pingInterval) || 0) * 1000;
+     }
+     /**
+      * Start the pong watchdog after sending a ping. If no inbound frame
+@@ -102774,7 +102777,7 @@ class WSClient {
+             this.armLiveness();
+             this.logger.trace('[ws]', 'ping success');
+         }
+-        this.pingInterval = setTimeout(this.pingLoop.bind(this), pingInterval);
++        this.pingInterval = setTimeout(this.pingLoop.bind(this), this.pingIntervalCapMs ? Math.min(pingInterval, this.pingIntervalCapMs) : pingInterval);
+     }
+     communicate() {
+         const wsInstance = this.wsConfig.getWSInstance();
+diff --git a/lib/index.js b/lib/index.js
+index 706a91d8e596bcdfb4966061c0111c9f54a91d8a..1560822eec41534cfbf6447fff4339c4233bccb7 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -102403,6 +102403,9 @@ class WSClient {
+         this.onReconnected = onReconnected;
+         this.handshakeTimeoutMs = handshakeTimeoutMs;
+         this.pingTimeoutSec = (_a = userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.pingTimeout) !== null && _a !== void 0 ? _a : 0;
++        // Client-side cap on the server-assigned ping interval (seconds). Keeps
++        // the socket warm through middleboxes that drop idle flows sooner.
++        this.pingIntervalCapMs = ((userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.pingInterval) || 0) * 1000;
+     }
+     /**
+      * Start the pong watchdog after sending a ping. If no inbound frame
+@@ -102792,7 +102795,7 @@ class WSClient {
+             this.armLiveness();
+             this.logger.trace('[ws]', 'ping success');
+         }
+-        this.pingInterval = setTimeout(this.pingLoop.bind(this), pingInterval);
++        this.pingInterval = setTimeout(this.pingLoop.bind(this), this.pingIntervalCapMs ? Math.min(pingInterval, this.pingIntervalCapMs) : pingInterval);
+     }
+     communicate() {
+         const wsInstance = this.wsConfig.getWSInstance();
+diff --git a/types/index.d.ts b/types/index.d.ts
+index 7a3e7b0471cee96902dfbb8f680a3bb0e15e50ea..f4cc7048021781fb43ba59385c8af3f278aa411b 100644
+--- a/types/index.d.ts
++++ b/types/index.d.ts
+@@ -321617,6 +321617,8 @@ interface WSConfigOverrides {
+      * errors.
+      */
+     pingTimeout?: number;
++    /** Upper bound (seconds) on the server-assigned ping interval. */
++    pingInterval?: number;
+ }
+ interface IConstructorParams {
+     appId: string;

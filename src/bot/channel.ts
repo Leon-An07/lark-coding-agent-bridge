@@ -275,6 +275,12 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       // 3s tripped on ordinary latency spikes (~1 reconnect/min, 10-20s each),
       // and events pushed during a reconnect window were lost.
       pingTimeout: 10,
+      // Ping at least every 30s (server assigns ~90s). CorpLink recomputes its
+      // routes about every 80s and silently kills open sockets; with 90s pings
+      // a dead socket went unnoticed for up to 100s, and card callbacks sent
+      // in that gap failed with "target callback service offline".
+      // Patched knob, see patches/@larksuiteoapi__node-sdk@1.75.0.patch.
+      pingInterval: 30,
     },
     // 8s handshake timeout (replaces hardcoded 15s). Fast-fail + fast-retry
     // beats slow-fail in unstable networks.
