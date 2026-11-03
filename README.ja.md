@@ -27,11 +27,13 @@ Lark のメッセンジャーとローカルの Claude Code または Codex CLI 
 
 ## インストール
 
+この fork は npm ではなく、[GitHub Releases](https://github.com/Leon-An07/lark-coding-agent-bridge/releases) に添付したパッケージで配布しています。`npm i -g lark-channel-bridge` では上流のパッケージがインストールされ、この fork の修正は含まれません。
+
 ```bash
-npm i -g lark-channel-bridge
-# or
-pnpm add -g lark-channel-bridge
+npm i -g https://github.com/Leon-An07/lark-coding-agent-bridge/releases/latest/download/lark-channel-bridge.tgz
 ```
+
+アップグレードするときは同じコマンドをもう一度実行します。バージョンを固定したい場合は、`latest/download` を `download/<tag>` に置き換えてください（例: `download/v0.7.1`）。
 
 ## 初回起動
 
@@ -328,7 +330,7 @@ grep '"event":"enter"' ~/.lark-channel/profiles/<profile>/logs/bridge-$(date +%Y
 **インストールと実行。**
 
 - Node 20.12 以降を使ってください。それより古いバージョンは起動時に `styleText` エラーで失敗します。
-- `start` を使う前に、`npm install -g lark-channel-bridge` でグローバルにインストールしてください。`npx` 経由で起動したサービスは、npm がキャッシュを消去すると動かなくなります。
+- `start` を使う前に、[インストール](#インストール)の手順でグローバルにインストールしてください。`npx` 経由で起動したサービスは、npm がキャッシュを消去すると動かなくなります。
 - サービスがどうしても動かない場合は、ターミナルで `lark-channel-bridge run` を実行してください。そのターミナルを閉じると bot は停止します。
 
 **日本語または中国語の Windows。**
@@ -363,6 +365,16 @@ pnpm build
 ```
 
 `pnpm test` には unit、integration、process-level adapter のテストが含まれます。CI は macOS、Ubuntu、Windows 上で `pnpm install --frozen-lockfile`、`pnpm test`、`pnpm typecheck`、`pnpm build` を実行します。
+
+リリースの公開:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+npm pack   # lark-channel-bridge-<version>.tgz を生成
+```
+
+`v<version>` タグの GitHub Release を作成し、tarball を `lark-channel-bridge.tgz` にリネームして添付します。こうすると[インストール](#インストール)の `latest/download` のリンクが常に最新版を指します。パッチ済みの `@larksuite/channel` は `dist/` にバンドルされているため、npm でインストールしても pnpm のチェックアウトと同じ修正が入ります。
 
 ## 任意のテレメトリー
 

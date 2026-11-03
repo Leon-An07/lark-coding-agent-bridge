@@ -27,11 +27,13 @@ For a product walkthrough, see the [Feishu document](https://larkcommunity.feish
 
 ## Install
 
+This fork is distributed as a package attached to its [GitHub Releases](https://github.com/Leon-An07/lark-coding-agent-bridge/releases), not on npm. `npm i -g lark-channel-bridge` installs the upstream package, which lacks this fork's fixes.
+
 ```bash
-npm i -g lark-channel-bridge
-# or
-pnpm add -g lark-channel-bridge
+npm i -g https://github.com/Leon-An07/lark-coding-agent-bridge/releases/latest/download/lark-channel-bridge.tgz
 ```
+
+Run the same command again to upgrade. To pin a version, replace `latest/download` with `download/<tag>`, for example `download/v0.7.1`.
 
 ## First run
 
@@ -328,7 +330,7 @@ Most Windows reports upstream (see #128 and #131) trace back to a few causes. Th
 **Install and run.**
 
 - Use Node 20.12 or newer. Older versions fail at startup with a `styleText` error.
-- Install globally with `npm install -g lark-channel-bridge` before you use `start`. A service started through `npx` breaks when npm cleans its cache.
+- Install globally (see [Install](#install)) before you use `start`. A service started through `npx` breaks when npm cleans its cache.
 - If you cannot get the service to work, run `lark-channel-bridge run` in a terminal. Closing that terminal stops the bot.
 
 **Japanese or Chinese Windows.**
@@ -363,6 +365,16 @@ pnpm build
 ```
 
 `pnpm test` includes unit, integration, and process-level adapter tests. CI runs on macOS, Ubuntu, and Windows with `pnpm install --frozen-lockfile`, `pnpm test`, `pnpm typecheck`, and `pnpm build`.
+
+Publishing a release:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+npm pack   # writes lark-channel-bridge-<version>.tgz
+```
+
+Create a GitHub Release tagged `v<version>` and attach the tarball renamed to `lark-channel-bridge.tgz`, so the `latest/download` link in [Install](#install) keeps working. The patched `@larksuite/channel` is bundled into `dist/`, so npm installs get the same fixes as a pnpm checkout.
 
 ## Optional telemetry
 
