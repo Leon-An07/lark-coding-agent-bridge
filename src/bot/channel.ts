@@ -71,6 +71,7 @@ import { handleCommentMention } from './comments';
 import { recordRunSessionEvent, startRunFlow } from './run-flow';
 import { commandSessionCatalogIdentity } from './session-catalog-identity';
 import { startKeepalive } from './keepalive';
+import { onRouteFlush } from './route-watch';
 import { PendingQueue } from './pending-queue';
 import { ProcessPool } from './process-pool';
 import { fetchQuotedContext, fetchTopicContext, type QuotedContext } from './quote';
@@ -281,6 +282,11 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       // in that gap failed with "target callback service offline".
       // Patched knob, see patches/@larksuiteoapi__node-sdk@1.75.0.patch.
       pingInterval: 30,
+      // Server assigns up to 30s of reconnect jitter and 120s between retries.
+      // With route flushes every ~70s that left callbacks offline half the
+      // time; three clients don't need thundering-herd protection.
+      reconnectNonce: 2,
+      reconnectInterval: 5,
     },
     // 8s handshake timeout (replaces hardcoded 15s). Fast-fail + fast-retry
     // beats slow-fail in unstable networks.
@@ -544,6 +550,23 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
     domain: probeDomain,
     forceReconnect: () => controls.restart(),
   });
+  // A route flush (CorpLink rebuilding its routes) silently kills the socket.
+  // Terminate it at once so the SDK reconnects now instead of at the next
+  // ping timeout. Same path as the SDK's pong watchdog: runs keep going.
+  const stopRouteWatch = onRouteFlush(() => {
+    const ws = (
+      channel as unknown as {
+        rawWsClient?: { wsConfig?: { getWSInstance?: () => { terminate(): void } | null } };
+      }
+    ).rawWsClient?.wsConfig?.getWSInstance?.();
+    if (!ws) return;
+    log.info('ws', 'route-flush-reconnect', { procId: controls.processId });
+    try {
+      ws.terminate();
+    } catch (err) {
+      log.fail('ws', err, { step: 'route-flush-reconnect' });
+    }
+  });
 
   return {
     channel,
@@ -552,6 +575,7 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       ownerRefresh.stop();
       knownChatsRefresh.stop();
       keepalive.stop();
+      stopRouteWatch();
       // Stop meeting timers but stay in the meetings: /reconnect tears the
       // channel down and rebuilds it, and auto-leaving every meeting on a
       // reconnect would be surprising.

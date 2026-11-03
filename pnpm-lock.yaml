@@ -9,7 +9,7 @@ patchedDependencies:
     hash: ee792eff57d46497d07566052cc2a1bfbcbbcc77d274f962dd511c4b0cefea97
     path: patches/@larksuite__channel@0.6.1.patch
   '@larksuiteoapi/node-sdk@1.75.0':
-    hash: 87ae9895e5ad52c9410133b4bcdea65fd9b16728645f7689b20d9cf7a4c03227
+    hash: d4cd1f2459cb0404d3525385402586ce1b949c071ce6aee0a17381055699fc84
     path: patches/@larksuiteoapi__node-sdk@1.75.0.patch
 
 importers:
@@ -2395,7 +2395,7 @@ snapshots:
 
   '@larksuite/channel@0.6.1(patch_hash=ee792eff57d46497d07566052cc2a1bfbcbbcc77d274f962dd511c4b0cefea97)':
     dependencies:
-      '@larksuiteoapi/node-sdk': 1.75.0(patch_hash=87ae9895e5ad52c9410133b4bcdea65fd9b16728645f7689b20d9cf7a4c03227)
+      '@larksuiteoapi/node-sdk': 1.75.0(patch_hash=d4cd1f2459cb0404d3525385402586ce1b949c071ce6aee0a17381055699fc84)
       https-proxy-agent: 9.1.0
     transitivePeerDependencies:
       - bufferutil
@@ -2404,7 +2404,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@larksuiteoapi/node-sdk@1.75.0(patch_hash=87ae9895e5ad52c9410133b4bcdea65fd9b16728645f7689b20d9cf7a4c03227)':
+  '@larksuiteoapi/node-sdk@1.75.0(patch_hash=d4cd1f2459cb0404d3525385402586ce1b949c071ce6aee0a17381055699fc84)':
     dependencies:
       axios: 1.19.0
       lodash.identity: 3.0.0
