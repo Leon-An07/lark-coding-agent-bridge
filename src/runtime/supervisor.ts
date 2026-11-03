@@ -4,6 +4,7 @@ import type { Controls } from '../commands';
 import type { AppPaths } from '../config/app-paths';
 import { isComplete, type AppConfig } from '../config/schema';
 import type { AgentKind, ProfileConfig } from '../config/profile-schema';
+import { loadRootConfig } from '../config/profile-store';
 import type { AgentAdapter } from '../agent/types';
 import { log } from '../core/logger';
 import { msgs } from '../i18n';
@@ -43,6 +44,11 @@ export interface SupervisorOptions {
   startChannelFn?: StartChannelFn;
   /** Run lark-cli preflight per profile (default true; tests pass false). */
   runPreflight?: boolean;
+}
+
+export interface StartAllResult {
+  started: string[];
+  failed: { profile: string; error: string }[];
 }
 
 export interface ManagedStatus {
@@ -361,6 +367,27 @@ export class Supervisor {
     await managed.bringUp(new Date().toISOString());
     this.managed.set(appPaths.profile, managed);
     log.info('supervisor', 'profile-online', { profile: appPaths.profile, appId: cfg.accounts.app.id });
+  }
+
+  /**
+   * Boot-time start: bring every configured profile online, `first` (the
+   * active profile) before the rest. A failing profile is reported and skipped
+   * so it cannot keep the other bots offline.
+   */
+  async startAll(first: string): Promise<StartAllResult> {
+    const rc = await loadRootConfig(this.opts.configPath);
+    const names = Object.keys(rc?.profiles ?? {});
+    const ordered = names.includes(first) ? [first, ...names.filter((n) => n !== first)] : names;
+    const result: StartAllResult = { started: [], failed: [] };
+    for (const profile of ordered) {
+      try {
+        await this.startProfile(profile);
+        result.started.push(profile);
+      } catch (err) {
+        result.failed.push({ profile, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    return result;
   }
 
   /** Take a profile offline (in-process). The supervisor keeps running. */

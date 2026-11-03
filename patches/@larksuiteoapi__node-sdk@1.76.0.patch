@@ -1,0 +1,95 @@
+diff --git a/es/index.js b/es/index.js
+index 671ce1d017218a54aac64525f31a24282deda1c2..6a7b48f451a258dca695b84f2b652197061b7d2e 100644
+--- a/es/index.js
++++ b/es/index.js
+@@ -102431,6 +102431,13 @@ class WSClient {
+         this.onReconnected = onReconnected;
+         this.handshakeTimeoutMs = handshakeTimeoutMs;
+         this.pingTimeoutSec = (_a = userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.pingTimeout) !== null && _a !== void 0 ? _a : 0;
++        // Client-side cap on the server-assigned ping interval (seconds). Keeps
++        // the socket warm through middleboxes that drop idle flows sooner.
++        this.pingIntervalCapMs = ((userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.pingInterval) || 0) * 1000;
++        // Client-side caps on the server-assigned reconnect jitter and retry
++        // interval (seconds), so a known network blip recovers in seconds.
++        this.reconnectNonceCapMs = ((userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.reconnectNonce) || 0) * 1000;
++        this.reconnectIntervalCapMs = ((userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.reconnectInterval) || 0) * 1000;
+     }
+     /**
+      * Start the pong watchdog after sending a ping. If no inbound frame
+@@ -102730,7 +102737,10 @@ class WSClient {
+                 this.logger.info('[ws]', 'ws client ready');
+                 return;
+             }
+-            const { autoReconnect, reconnectNonce, reconnectCount, reconnectInterval } = this.wsConfig.getWS();
++            const { autoReconnect, reconnectCount } = this.wsConfig.getWS();
++            const capMs = (v, cap) => (cap ? Math.min(v, cap) : v);
++            const reconnectNonce = capMs(this.wsConfig.getWS().reconnectNonce, this.reconnectNonceCapMs);
++            const reconnectInterval = capMs(this.wsConfig.getWS().reconnectInterval, this.reconnectIntervalCapMs);
+             if (!autoReconnect) {
+                 if (!this.hasEverConnected) {
+                     this.terminalError = true;
+@@ -102824,7 +102834,7 @@ class WSClient {
+             this.armLiveness();
+             this.logger.trace('[ws]', 'ping success');
+         }
+-        this.pingInterval = setTimeout(this.pingLoop.bind(this), pingInterval);
++        this.pingInterval = setTimeout(this.pingLoop.bind(this), this.pingIntervalCapMs ? Math.min(pingInterval, this.pingIntervalCapMs) : pingInterval);
+     }
+     communicate() {
+         const wsInstance = this.wsConfig.getWSInstance();
+diff --git a/lib/index.js b/lib/index.js
+index 389eb63ce18b65713e2aabf594fca81e72c47b7f..912574576358e177bdc74a518abeffd9ab634be5 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -102449,6 +102449,13 @@ class WSClient {
+         this.onReconnected = onReconnected;
+         this.handshakeTimeoutMs = handshakeTimeoutMs;
+         this.pingTimeoutSec = (_a = userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.pingTimeout) !== null && _a !== void 0 ? _a : 0;
++        // Client-side cap on the server-assigned ping interval (seconds). Keeps
++        // the socket warm through middleboxes that drop idle flows sooner.
++        this.pingIntervalCapMs = ((userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.pingInterval) || 0) * 1000;
++        // Client-side caps on the server-assigned reconnect jitter and retry
++        // interval (seconds), so a known network blip recovers in seconds.
++        this.reconnectNonceCapMs = ((userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.reconnectNonce) || 0) * 1000;
++        this.reconnectIntervalCapMs = ((userWsConfig === null || userWsConfig === void 0 ? void 0 : userWsConfig.reconnectInterval) || 0) * 1000;
+     }
+     /**
+      * Start the pong watchdog after sending a ping. If no inbound frame
+@@ -102748,7 +102755,10 @@ class WSClient {
+                 this.logger.info('[ws]', 'ws client ready');
+                 return;
+             }
+-            const { autoReconnect, reconnectNonce, reconnectCount, reconnectInterval } = this.wsConfig.getWS();
++            const { autoReconnect, reconnectCount } = this.wsConfig.getWS();
++            const capMs = (v, cap) => (cap ? Math.min(v, cap) : v);
++            const reconnectNonce = capMs(this.wsConfig.getWS().reconnectNonce, this.reconnectNonceCapMs);
++            const reconnectInterval = capMs(this.wsConfig.getWS().reconnectInterval, this.reconnectIntervalCapMs);
+             if (!autoReconnect) {
+                 if (!this.hasEverConnected) {
+                     this.terminalError = true;
+@@ -102842,7 +102852,7 @@ class WSClient {
+             this.armLiveness();
+             this.logger.trace('[ws]', 'ping success');
+         }
+-        this.pingInterval = setTimeout(this.pingLoop.bind(this), pingInterval);
++        this.pingInterval = setTimeout(this.pingLoop.bind(this), this.pingIntervalCapMs ? Math.min(pingInterval, this.pingIntervalCapMs) : pingInterval);
+     }
+     communicate() {
+         const wsInstance = this.wsConfig.getWSInstance();
+diff --git a/types/index.d.ts b/types/index.d.ts
+index 00c35ce86e6b1b9434b1b4f84bc174c1e5eb00a3..c06149f7da020da8f2a6c27b6b5037aa2c45199b 100644
+--- a/types/index.d.ts
++++ b/types/index.d.ts
+@@ -321617,6 +321617,12 @@ interface WSConfigOverrides {
+      * errors.
+      */
+     pingTimeout?: number;
++    /** Upper bound (seconds) on the server-assigned ping interval. */
++    pingInterval?: number;
++    /** Upper bound (seconds) on the random delay before the first reconnect attempt. */
++    reconnectNonce?: number;
++    /** Upper bound (seconds) between reconnect attempts. */
++    reconnectInterval?: number;
+ }
+ interface IConstructorParams {
+     appId: string;

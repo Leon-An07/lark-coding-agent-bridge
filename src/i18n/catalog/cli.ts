@@ -126,8 +126,8 @@ export const cliZh = {
   consoleAlreadyRunningLocked: '控制面已在运行（另一个 supervisor 进程持有锁）。',
   consoleReady: (url: string) => `✓ 控制台：${url}`,
   runProfileOnline: (profile: string) => `✓ profile「${profile}」已上线`,
-  activeProfileStartFailed: (profile: string, message: string) =>
-    `⚠️ active profile「${profile}」启动失败：${message}`,
+  profileAutoStartFailed: (profile: string, message: string) =>
+    `⚠️ profile「${profile}」自动启动失败：${message}`,
 
   // ── migrate ──
   migrateProfileUpgraded: (profile: string) => `✓ 已升级 profile 目录结构：${profile}`,
@@ -496,8 +496,8 @@ export const cliEn: typeof cliZh = {
   consoleAlreadyRunningLocked: 'The control plane is already running (another supervisor process holds the lock).',
   consoleReady: (url: string) => `✓ Console: ${url}`,
   runProfileOnline: (profile: string) => `✓ profile "${profile}" is online`,
-  activeProfileStartFailed: (profile: string, message: string) =>
-    `⚠️ Failed to start active profile "${profile}": ${message}`,
+  profileAutoStartFailed: (profile: string, message: string) =>
+    `⚠️ Failed to auto-start profile "${profile}": ${message}`,
 
   // ── migrate ──
   migrateProfileUpgraded: (profile: string) => `✓ Upgraded profile directory layout: ${profile}`,
@@ -884,8 +884,8 @@ export const cliJa: typeof cliZh = {
     'コントロールプレーンは既に実行中です(別の supervisor プロセスがロックを保持しています)。',
   consoleReady: (url: string) => `✓ コンソール: ${url}`,
   runProfileOnline: (profile: string) => `✓ profile「${profile}」がオンラインになりました`,
-  activeProfileStartFailed: (profile: string, message: string) =>
-    `⚠️ active profile「${profile}」の起動に失敗しました: ${message}`,
+  profileAutoStartFailed: (profile: string, message: string) =>
+    `⚠️ profile「${profile}」の自動起動に失敗しました: ${message}`,
 
   // ── migrate ──
   migrateProfileUpgraded: (profile: string) =>

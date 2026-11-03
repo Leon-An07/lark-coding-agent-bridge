@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.4.0",
-    "@larksuiteoapi/node-sdk": "^1.73.1",
+    "@larksuiteoapi/node-sdk": "1.76.0",
     "commander": "^12.1.0",
     "cross-spawn": "^7.0.6",
     "graceful-fs": "^4.2.11",
@@ -60,7 +60,7 @@
     "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
-    "@larksuite/channel": "0.6.1",
+    "@larksuite/channel": "0.7.1",
     "@radix-ui/react-dialog": "^1.1.19",
     "@radix-ui/react-label": "^2.1.11",
     "@radix-ui/react-select": "^2.3.3",
@@ -101,8 +101,12 @@
       "esbuild",
       "protobufjs"
     ],
+    "overrides": {
+      "@larksuiteoapi/node-sdk": "1.76.0"
+    },
     "patchedDependencies": {
-      "@larksuite/channel@0.6.1": "patches/@larksuite__channel@0.6.1.patch"
+      "@larksuite/channel@0.7.1": "patches/@larksuite__channel@0.7.1.patch",
+      "@larksuiteoapi/node-sdk@1.76.0": "patches/@larksuiteoapi__node-sdk@1.76.0.patch"
     }
   },
   "keywords": [

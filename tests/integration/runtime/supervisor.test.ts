@@ -97,4 +97,21 @@ describe('Supervisor', () => {
     await sup.startProfile('claude');
     expect(started.filter((p) => p === 'claude')).toHaveLength(1);
   });
+
+  it('startAll starts the given profile first, then every other profile', async () => {
+    const result = await sup.startAll('work');
+    expect(started[0]).toBe('work');
+    expect(result.started).toEqual(['work', 'claude']);
+    expect(sup.list().map((s) => s.profile).sort()).toEqual(['claude', 'work']);
+  });
+
+  it('startAll reports a failing profile and still starts the rest', async () => {
+    // dup shares cli_b with work, so whichever comes second fails.
+    const result = await sup.startAll('dup');
+    expect(result.started).toEqual(['dup', 'claude']);
+    expect(result.failed).toEqual([
+      { profile: 'work', error: msgs().cli.supervisorAppAlreadyConnected('dup') },
+    ]);
+    expect(sup.isOnline('work')).toBe(false);
+  });
 });
