@@ -401,7 +401,12 @@ export async function startChannel(deps: StartChannelDeps): Promise<BridgeChanne
       log.info('intake', 'reject', { chatId: evt.chatId, reason: evt.reason });
     },
     cardAction: async (evt) => {
-      await withTrace({ chatId: evt.chatId, msgId: evt.messageId }, async () => {
+      // Ack at once and handle in the background. Feishu fails the click with
+      // "callback service timed out" after 3s, and resolving the scope costs
+      // two API round-trips (~1.5s each through CorpLink). The callback
+      // response carries nothing: the card is locked and replied to via API.
+      void withTrace({ chatId: evt.chatId, msgId: evt.messageId }, async () => {
+        log.info('cardAction', 'received', { operator: evt.operator.openId.slice(-6) });
         await handleCardAction({
           channel,
           evt,

@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.4.0",
-    "@larksuite/channel": "^0.6.0",
+    "@larksuite/channel": "^0.7.1",
     "commander": "^12.1.0",
     "cross-spawn": "^7.0.6",
     "graceful-fs": "^4.2.11",
@@ -99,9 +99,12 @@
       "esbuild",
       "protobufjs"
     ],
+    "overrides": {
+      "@larksuiteoapi/node-sdk": "1.76.0"
+    },
     "patchedDependencies": {
-      "@larksuite/channel@0.6.1": "patches/@larksuite__channel@0.6.1.patch",
-      "@larksuiteoapi/node-sdk@1.75.0": "patches/@larksuiteoapi__node-sdk@1.75.0.patch"
+      "@larksuite/channel@0.7.1": "patches/@larksuite__channel@0.7.1.patch",
+      "@larksuiteoapi/node-sdk@1.76.0": "patches/@larksuiteoapi__node-sdk@1.76.0.patch"
     }
   },
   "keywords": [
